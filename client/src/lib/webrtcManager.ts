@@ -2,11 +2,13 @@ import { sendWebRTCMessage } from './roomSocket';
 
 export class WebRTCManager {
   private peerConnection: RTCPeerConnection;
-  private dataChannel?: RTCDataChannel;
+  private dataChannel: RTCDataChannel | null = null;
   private socket: WebSocket | undefined;
+  private onTransferComplete?: (file: File) => void;
 
-  constructor(socket: WebSocket | undefined) {
+  constructor(socket: WebSocket | undefined, onTransferComplete?: (file: File) => void) {
     this.socket = socket;
+    this.onTransferComplete = onTransferComplete;
     this.peerConnection = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
@@ -137,6 +139,9 @@ export class WebRTCManager {
               
               if (hashHex === expectedHash) {
                 console.log('[WebRTC] SUCCESS: Hashes match exactly from OPFS disk! 🚀');
+                if (this.onTransferComplete) {
+                  this.onTransferComplete(file);
+                }
               } else {
                 console.error('[WebRTC] ERROR: Hash mismatch!');
               }

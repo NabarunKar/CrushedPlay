@@ -43,6 +43,7 @@ export function RoomPage() {
   const socketRef = useRef<WebSocket | undefined>(undefined);
   const isHostRef = useRef(false);
   const selectedMediaRef = useRef<MediaIdentity | undefined>(undefined);
+  const expectedMediaRef = useRef<MediaIdentity | undefined>(undefined);
   const subtitleTracksRef = useRef<SubtitleTrack[]>([]);
   const remoteActionRef = useRef(false);
   const playbackSessionRef = useRef<PlaybackSession | undefined>(undefined);
@@ -60,6 +61,10 @@ export function RoomPage() {
   useEffect(() => {
     selectedMediaRef.current = selectedMedia;
   }, [selectedMedia]);
+
+  useEffect(() => {
+    expectedMediaRef.current = expectedMedia;
+  }, [expectedMedia]);
 
   useEffect(() => {
     subtitleTracksRef.current = subtitleTracks;
@@ -131,7 +136,9 @@ export function RoomPage() {
           }
         });
         socketRef.current = socket;
-        webrtcManagerRef.current = new WebRTCManager(socket);
+        webrtcManagerRef.current = new WebRTCManager(socket, (file: File) => {
+          loadMovieFromFile(file).catch(console.error);
+        });
       } catch {
         if (isMounted) {
           setStatus('error');
@@ -241,13 +248,7 @@ export function RoomPage() {
     };
   }, []);
 
-  async function handleMovieSelected(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-
-    if (!file) {
-      return;
-    }
-
+  async function loadMovieFromFile(file: File) {
     const nextSession = await localFileProvider.createSession(file);
     const mediaInspection = await inspectMediaFile(file);
     const fileDuration = await readVideoDuration(file);
@@ -283,8 +284,8 @@ export function RoomPage() {
       setVerificationStatus('verified');
       setMediaDifferences([]);
       sendMediaSelected(socketRef.current, mediaIdentity);
-    } else if (expectedMedia) {
-      compareAgainstExpectedMedia(expectedMedia, mediaIdentity);
+    } else if (expectedMediaRef.current) {
+      compareAgainstExpectedMedia(expectedMediaRef.current, mediaIdentity);
     } else {
       setVerificationStatus('waiting');
       setMediaDifferences([]);
@@ -294,6 +295,16 @@ export function RoomPage() {
       videoRef.current.src = nextSession.sourceUrl;
       videoRef.current.load();
     }
+  }
+
+  async function handleMovieSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    await loadMovieFromFile(file);
 
     event.target.value = '';
   }
