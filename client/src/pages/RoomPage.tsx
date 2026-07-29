@@ -37,6 +37,7 @@ export function RoomPage() {
   const [currentTime, setCurrentTime] = useState(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const subtitleInputRef = useRef<HTMLInputElement | null>(null);
+  const transferInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerRef = useRef<Plyr | null>(null);
   const socketRef = useRef<WebSocket | undefined>(undefined);
@@ -317,6 +318,17 @@ export function RoomPage() {
     event.target.value = '';
   }
 
+  async function handleTestTransfer(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    if (webrtcManagerRef.current) {
+      webrtcManagerRef.current.transferFile(file).catch(console.error);
+    }
+    
+    event.target.value = '';
+  }
+
   function compareAgainstExpectedMedia(expected: MediaIdentity, actual: MediaIdentity | undefined) {
     if (!actual) {
       setVerificationStatus('waiting');
@@ -461,9 +473,20 @@ export function RoomPage() {
             accept=".srt,.vtt,text/vtt"
             onChange={handleSubtitleSelected}
           />
+          <input
+            ref={transferInputRef}
+            className="visually-hidden"
+            type="file"
+            onChange={handleTestTransfer}
+          />
           <button type="button" className="primary-button select-movie-button" onClick={() => fileInputRef.current?.click()}>
             Select Movie
           </button>
+          {isHost ? (
+            <button type="button" className="secondary-button" onClick={() => transferInputRef.current?.click()}>
+              Test Transfer
+            </button>
+          ) : null}
           <button type="button" className="secondary-button load-subtitles-button" onClick={() => subtitleInputRef.current?.click()}>
             Load Subtitles
           </button>

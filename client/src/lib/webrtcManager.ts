@@ -76,14 +76,125 @@ export class WebRTCManager {
   private setupDataChannel() {
     if (!this.dataChannel) return;
 
+    this.dataChannel.binaryType = 'arraybuffer';
+    this.dataChannel.bufferedAmountLowThreshold = 1024 * 1024; // 1MB threshold
+
     this.dataChannel.addEventListener('open', () => {
       console.log('[WebRTC] DataChannel opened');
-      this.dataChannel?.send('Hello World from ' + (this.dataChannel.label || 'peer'));
     });
 
-    this.dataChannel.addEventListener('message', (event) => {
-      console.log(`[WebRTC] Received message: ${event.data}`);
+    let receiveBuffer: ArrayBuffer[] = [];
+    let receivedSize = 0;
+    let expectedSize = 0;
+    let expectedHash = '';
+    let startTime = 0;
+
+    this.dataChannel.addEventListener('message', async (event) => {
+      if (typeof event.data === 'string') {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'transfer-start') {
+          console.log(`[WebRTC] Transfer started. Expecting ${msg.size} bytes. Expected Hash: ${msg.expectedHash}`);
+          expectedSize = msg.size;
+          expectedHash = msg.expectedHash;
+          receiveBuffer = [];
+          receivedSize = 0;
+          startTime = performance.now();
+        }
+      } else if (event.data instanceof ArrayBuffer) {
+        receiveBuffer.push(event.data);
+        receivedSize += event.data.byteLength;
+
+        if (receivedSize >= expectedSize && expectedSize > 0) {
+          const endTime = performance.now();
+          const elapsedSeconds = (endTime - startTime) / 1000;
+          const mbps = (expectedSize / (1024 * 1024)) / elapsedSeconds;
+
+          console.log(`[WebRTC] Transfer finished.`);
+          console.log(`[WebRTC] Received ${expectedSize} bytes in ${receiveBuffer.length} chunks.`);
+          console.log(`[WebRTC] Elapsed time: ${elapsedSeconds.toFixed(2)}s`);
+          console.log(`[WebRTC] Throughput: ${mbps.toFixed(2)} MB/s`);
+
+          const blob = new Blob(receiveBuffer);
+          const arrayBuffer = await blob.arrayBuffer();
+          const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+          const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+          console.log(`[WebRTC] Sender SHA-256:   ${expectedHash}`);
+          console.log(`[WebRTC] Receiver SHA-256: ${hashHex}`);
+          
+          if (hashHex === expectedHash) {
+            console.log('[WebRTC] SUCCESS: Hashes match exactly! 🚀');
+          } else {
+            console.error('[WebRTC] ERROR: Hash mismatch!');
+          }
+
+          // Cleanup
+          receiveBuffer = [];
+          receivedSize = 0;
+          expectedSize = 0;
+        }
+      }
     });
+  }
+
+  public async transferFile(file: File) {
+    if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
+      console.error('[WebRTC] DataChannel is not open');
+      return;
+    }
+
+    const CHUNK_SIZE = 64 * 1024; // 64 KB
+
+    console.log(`[WebRTC] Hashing original file (${file.name}, ${file.size} bytes)...`);
+    const fileBuffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer);
+    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    console.log(`[WebRTC] Original SHA-256: ${hashHex}`);
+
+    this.dataChannel.send(JSON.stringify({
+      type: 'transfer-start',
+      filename: file.name,
+      size: file.size,
+      expectedHash: hashHex
+    }));
+
+    console.log(`[WebRTC] Starting chunked transfer...`);
+    const startTime = performance.now();
+    let offset = 0;
+    let chunkCount = 0;
+
+    const waitForBackpressure = () => {
+      return new Promise<void>((resolve) => {
+        if (!this.dataChannel || this.dataChannel.bufferedAmount <= this.dataChannel.bufferedAmountLowThreshold) {
+          resolve();
+          return;
+        }
+        const listener = () => {
+          this.dataChannel?.removeEventListener('bufferedamountlow', listener);
+          resolve();
+        };
+        this.dataChannel.addEventListener('bufferedamountlow', listener);
+      });
+    };
+
+    while (offset < file.size) {
+      const slice = file.slice(offset, offset + CHUNK_SIZE);
+      const buffer = await slice.arrayBuffer();
+      
+      await waitForBackpressure();
+      
+      this.dataChannel.send(buffer);
+      offset += buffer.byteLength;
+      chunkCount++;
+    }
+
+    const endTime = performance.now();
+    const elapsedSeconds = (endTime - startTime) / 1000;
+    const mbps = (file.size / (1024 * 1024)) / elapsedSeconds;
+
+    console.log(`[WebRTC] Sent ${file.size} bytes in ${chunkCount} chunks.`);
+    console.log(`[WebRTC] Send elapsed time: ${elapsedSeconds.toFixed(2)}s`);
+    console.log(`[WebRTC] Send throughput: ${mbps.toFixed(2)} MB/s`);
   }
 
   public destroy() {
