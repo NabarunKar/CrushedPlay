@@ -36,6 +36,8 @@ export function RoomPage() {
   const [duration, setDuration] = useState<number | undefined>();
   const [currentTime, setCurrentTime] = useState(0);
   const [showDebug, setShowDebug] = useState(false);
+  const [transferProgress, setTransferProgress] = useState<{ transferred: number; total: number } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const subtitleInputRef = useRef<HTMLInputElement | null>(null);
   const transferInputRef = useRef<HTMLInputElement | null>(null);
@@ -138,8 +140,12 @@ export function RoomPage() {
         });
         socketRef.current = socket;
         webrtcManagerRef.current = new WebRTCManager(socket, (file: File) => {
+          setTransferProgress(null);
           loadMovieFromFile(file).catch(console.error);
         });
+        webrtcManagerRef.current.onProgress = (transferred, total) => {
+          setTransferProgress({ transferred, total });
+        };
       } catch {
         if (isMounted) {
           setStatus('error');
@@ -250,6 +256,7 @@ export function RoomPage() {
   }, []);
 
   async function loadMovieFromFile(file: File) {
+    setSelectedFile(file);
     const nextSession = await localFileProvider.createSession(file);
     const mediaInspection = await inspectMediaFile(file);
     const fileDuration = await readVideoDuration(file);
@@ -335,7 +342,8 @@ export function RoomPage() {
     if (!file) return;
 
     if (webrtcManagerRef.current) {
-      webrtcManagerRef.current.transferFile(file).catch(console.error);
+      await webrtcManagerRef.current.transferFile(file).catch(console.error);
+      setTransferProgress(null);
     }
 
     event.target.value = '';
@@ -491,17 +499,42 @@ export function RoomPage() {
             type="file"
             onChange={handleTestTransfer}
           />
-          <button type="button" className="primary-button select-movie-button" onClick={() => fileInputRef.current?.click()}>
-            Select Movie
-          </button>
-          {isHost ? (
-            <button type="button" className="secondary-button" onClick={() => transferInputRef.current?.click()}>
-              Send Movie ᯓ ✈︎ ⋆°•☁︎
+          
+          <div className="player-controls-container" style={{ width: '100%' }}>
+            <button type="button" className="primary-button select-movie-button" onClick={() => fileInputRef.current?.click()}>
+              Select Movie
             </button>
-          ) : null}
-          <button type="button" className="secondary-button load-subtitles-button" onClick={() => subtitleInputRef.current?.click()}>
-            Load Subtitles
-          </button>
+            {isHost ? (
+              <button 
+                type="button" 
+                className="secondary-button" 
+                style={{ marginLeft: '12px', marginBottom: '18px' }}
+                onClick={() => {
+                  if (selectedFile) {
+                    if (webrtcManagerRef.current) {
+                      webrtcManagerRef.current.transferFile(selectedFile).catch(console.error);
+                    }
+                  } else {
+                    transferInputRef.current?.click();
+                  }
+                }}
+              >
+                Send Movie ᯓ ✈︎ ⋆°•☁︎
+              </button>
+            ) : null}
+            <button type="button" className="secondary-button load-subtitles-button" onClick={() => subtitleInputRef.current?.click()}>
+              Load Subtitles
+            </button>
+            
+            {transferProgress !== null && (
+              <div className="progress-container">
+                <div className="progress-bar-fill" style={{ width: `${(transferProgress.transferred / transferProgress.total) * 100}%` }} />
+                <p className="progress-text">
+                  {Math.floor((transferProgress.transferred / transferProgress.total) * 100)}% ({formatBytes(transferProgress.transferred)} / {formatBytes(transferProgress.total)})
+                </p>
+              </div>
+            )}
+          </div>
 
           <video ref={videoRef} className="player-video" playsInline controls>
             {subtitleTracks.map((track) => (

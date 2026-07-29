@@ -5,6 +5,7 @@ export class WebRTCManager {
   private dataChannel: RTCDataChannel | null = null;
   private socket: WebSocket | undefined;
   private onTransferComplete?: (file: File) => void;
+  public onProgress?: (transferred: number, total: number) => void;
 
   constructor(socket: WebSocket | undefined, onTransferComplete?: (file: File) => void) {
     this.socket = socket;
@@ -95,9 +96,9 @@ export class WebRTCManager {
     let writableStream: FileSystemWritableFileStream | null = null;
     let chunkCount = 0;
     
-    // Async write queue to handle race conditions and order
     let writeQueue: ArrayBuffer[] = [];
     let isWriting = false;
+    let lastReportTime = 0;
 
     const processQueue = async () => {
       if (isWriting || !writableStream) return;
@@ -109,6 +110,14 @@ export class WebRTCManager {
           await writableStream.write(chunk);
           receivedSize += chunk.byteLength;
           chunkCount++;
+
+          const now = performance.now();
+          if (now - lastReportTime > 50 || receivedSize >= expectedSize) {
+            lastReportTime = now;
+            if (this.onProgress && expectedSize > 0) {
+              this.onProgress(receivedSize, expectedSize);
+            }
+          }
 
           if (receivedSize >= expectedSize && expectedSize > 0) {
             // Close the stream immediately to flush to disk
@@ -216,6 +225,7 @@ export class WebRTCManager {
     const startTime = performance.now();
     let offset = 0;
     let chunkCount = 0;
+    let lastReportTime = 0;
 
     const waitForBackpressure = () => {
       return new Promise<void>((resolve) => {
@@ -240,6 +250,14 @@ export class WebRTCManager {
       this.dataChannel.send(buffer);
       offset += buffer.byteLength;
       chunkCount++;
+
+      const now = performance.now();
+      if (now - lastReportTime > 50 || offset >= file.size) {
+        lastReportTime = now;
+        if (this.onProgress) {
+          this.onProgress(offset, file.size);
+        }
+      }
     }
 
     const endTime = performance.now();
