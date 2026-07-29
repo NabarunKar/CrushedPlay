@@ -46,6 +46,11 @@ export function createWebSocketServer(server: HttpServer) {
 
       if (message.type === 'media-selected') {
         handleMediaSelected(socket, state, message.media, clients);
+        return;
+      }
+
+      if (message.type === 'webrtc-offer' || message.type === 'webrtc-answer' || message.type === 'webrtc-ice-candidate') {
+        handleWebRTCRelay(socket, state, message, clients);
       }
     });
 
@@ -71,6 +76,25 @@ function handleMediaSelected(
   for (const [client, clientState] of clients) {
     if (client !== socket && clientState.roomId === state.roomId) {
       send(client, { type: 'media-selected', media });
+    }
+  }
+}
+
+function handleWebRTCRelay(
+  socket: WebSocket,
+  state: ClientState,
+  message: ClientMessage & { type: 'webrtc-offer' | 'webrtc-answer' | 'webrtc-ice-candidate' },
+  clients: Map<WebSocket, ClientState>
+) {
+  if (!state.roomId || !state.clientId) {
+    return;
+  }
+
+  for (const [client, clientState] of clients) {
+    if (client !== socket && clientState.roomId === state.roomId) {
+      if (!message.targetId || message.targetId === clientState.clientId) {
+        send(client, { ...message, senderId: state.clientId });
+      }
     }
   }
 }
@@ -221,6 +245,28 @@ function parseMessage(message: string): ClientMessage | undefined {
         type: 'media-selected',
         media: parsed.media
       };
+    }
+
+    if (parsed.type === 'webrtc-offer' || parsed.type === 'webrtc-answer') {
+      if (typeof parsed.sdp === 'string') {
+        return {
+          type: parsed.type,
+          sdp: parsed.sdp,
+          targetId: typeof parsed.targetId === 'string' ? parsed.targetId : undefined
+        };
+      }
+    }
+
+    if (parsed.type === 'webrtc-ice-candidate') {
+      if (typeof parsed.candidate === 'string') {
+        return {
+          type: 'webrtc-ice-candidate',
+          candidate: parsed.candidate,
+          sdpMid: typeof parsed.sdpMid === 'string' ? parsed.sdpMid : null,
+          sdpMLineIndex: typeof parsed.sdpMLineIndex === 'number' ? parsed.sdpMLineIndex : null,
+          targetId: typeof parsed.targetId === 'string' ? parsed.targetId : undefined
+        };
+      }
     }
   } catch {
     return undefined;

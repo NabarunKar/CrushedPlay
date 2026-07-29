@@ -35,6 +35,20 @@ export type RoomSocketMessage =
   | {
       type: 'error';
       message: string;
+    }
+  | {
+      type: 'webrtc-offer' | 'webrtc-answer';
+      sdp: string;
+      senderId: string;
+      targetId?: string;
+    }
+  | {
+      type: 'webrtc-ice-candidate';
+      candidate: string;
+      sdpMid: string | null;
+      sdpMLineIndex: number | null;
+      senderId: string;
+      targetId?: string;
     };
 
 export type MediaIdentityMessage = {
@@ -78,6 +92,17 @@ export function sendMediaSelected(socket: WebSocket | undefined, media: MediaIde
   }
 }
 
+export function sendWebRTCMessage(
+  socket: WebSocket | undefined,
+  message:
+    | { type: 'webrtc-offer' | 'webrtc-answer'; sdp: string; targetId?: string }
+    | { type: 'webrtc-ice-candidate'; candidate: string; sdpMid: string | null; sdpMLineIndex: number | null; targetId?: string }
+) {
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(message));
+  }
+}
+
 function parseMessage(message: unknown): RoomSocketMessage | undefined {
   if (typeof message !== 'string') {
     return undefined;
@@ -94,7 +119,10 @@ function parseMessage(message: unknown): RoomSocketMessage | undefined {
       parsed.type === 'pause' ||
       parsed.type === 'seek' ||
       parsed.type === 'media-selected' ||
-      parsed.type === 'error'
+      parsed.type === 'error' ||
+      parsed.type === 'webrtc-offer' ||
+      parsed.type === 'webrtc-answer' ||
+      parsed.type === 'webrtc-ice-candidate'
     ) {
       return parsed;
     }

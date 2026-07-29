@@ -22,6 +22,18 @@ export type ClientMessage =
       playing: boolean;
     }
   | {
+      type: 'webrtc-offer' | 'webrtc-answer';
+      sdp: string;
+      targetId?: string;
+    }
+  | {
+      type: 'webrtc-ice-candidate';
+      candidate: string;
+      sdpMid: string | null;
+      sdpMLineIndex: number | null;
+      targetId?: string;
+    }
+  | {
       type: 'media-selected';
       media: MediaIdentityMessage;
     };
@@ -71,4 +83,18 @@ export type ServerMessage =
   | {
       type: 'error';
       message: string;
+    }
+  | {
+      type: 'webrtc-offer' | 'webrtc-answer';
+      sdp: string;
+      senderId: string;
+      targetId?: string;
+    }
+  | {
+      type: 'webrtc-ice-candidate';
+      candidate: string;
+      sdpMid: string | null;
+      sdpMLineIndex: number | null;
+      senderId: string;
+      targetId?: string;
     };

@@ -10,6 +10,7 @@ import { compareMediaIdentity, createMediaIdentity, formatBytes, MediaDifference
 import { formatDuration, inspectMediaFile, localFileProvider, logPlayerEvent, PlaybackSession } from '../playback';
 import { AudioTrack } from '../playback/types';
 import { createLocalSubtitleTrack, SubtitleTrack } from '../subtitles';
+import { WebRTCManager } from '../lib/webrtcManager';
 
 type RoomStatus = 'loading' | 'ready' | 'not-found' | 'error';
 type VerificationStatus = 'none' | 'waiting' | 'verified' | 'mismatch';
@@ -44,6 +45,7 @@ export function RoomPage() {
   const subtitleTracksRef = useRef<SubtitleTrack[]>([]);
   const remoteActionRef = useRef(false);
   const playbackSessionRef = useRef<PlaybackSession | undefined>(undefined);
+  const webrtcManagerRef = useRef<WebRTCManager | null>(null);
   const shareUrl = useMemo(() => window.location.href, []);
 
   useEffect(() => {
@@ -96,12 +98,16 @@ export function RoomPage() {
             return;
           }
 
-          if (message.type === 'joined-room' || message.type === 'user-count') {
-            setUsers(message.users);
-          }
-
           if (message.type === 'joined-room') {
             setIsHost(message.isHost);
+            isHostRef.current = message.isHost;
+          }
+
+          if (message.type === 'joined-room' || message.type === 'user-count') {
+            setUsers(message.users);
+            if (isHostRef.current && message.users > 1) {
+              webrtcManagerRef.current?.startAsHost().catch(console.error);
+            }
           }
 
           if (message.type === 'play' || message.type === 'pause' || message.type === 'seek') {
@@ -112,8 +118,19 @@ export function RoomPage() {
             setExpectedMedia(message.media);
             compareAgainstExpectedMedia(message.media, selectedMediaRef.current);
           }
+
+          if (message.type === 'webrtc-offer' && 'senderId' in message) {
+            webrtcManagerRef.current?.handleOffer(message.sdp, message.senderId as string).catch(console.error);
+          }
+          if (message.type === 'webrtc-answer') {
+            webrtcManagerRef.current?.handleAnswer(message.sdp).catch(console.error);
+          }
+          if (message.type === 'webrtc-ice-candidate') {
+            webrtcManagerRef.current?.handleIceCandidate(message.candidate, message.sdpMid, message.sdpMLineIndex).catch(console.error);
+          }
         });
         socketRef.current = socket;
+        webrtcManagerRef.current = new WebRTCManager(socket);
       } catch {
         if (isMounted) {
           setStatus('error');
@@ -132,6 +149,8 @@ export function RoomPage() {
 
       socket?.close();
       socketRef.current = undefined;
+      webrtcManagerRef.current?.destroy();
+      webrtcManagerRef.current = null;
     };
   }, [roomId]);
 
