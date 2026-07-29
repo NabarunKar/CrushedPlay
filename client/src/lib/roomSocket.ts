@@ -48,9 +48,8 @@ export type MediaIdentityMessage = {
 export type PlaybackCommand = Extract<RoomSocketMessage, { type: 'play' | 'pause' | 'seek' }>;
 
 export function createRoomSocket(roomId: string, clientId: string, onMessage: (message: RoomSocketMessage) => void) {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = import.meta.env.DEV ? 'localhost:3000' : window.location.host;
-  const socket = new WebSocket(`${protocol}//${host}`);
+  const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
+  const socket = new WebSocket(wsUrl);
 
   socket.addEventListener('open', () => {
     socket.send(JSON.stringify({ type: 'join-room', roomId, clientId }));

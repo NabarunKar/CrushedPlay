@@ -1,3 +1,5 @@
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+
 export type Room = {
   roomId: string;
   users: number;
@@ -5,7 +7,7 @@ export type Room = {
 };
 
 export async function createRoom() {
-  const response = await fetch('/api/rooms', {
+  const response = await fetch(`${API_BASE_URL}/api/rooms`, {
     method: 'POST'
   });
 
@@ -17,7 +19,7 @@ export async function createRoom() {
 }
 
 export async function getRoom(roomId: string) {
-  const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}`);
+  const response = await fetch(`${API_BASE_URL}/api/rooms/${encodeURIComponent(roomId)}`);
 
   if (response.status === 404) {
     return undefined;
