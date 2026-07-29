@@ -83,11 +83,79 @@ export class WebRTCManager {
       console.log('[WebRTC] DataChannel opened');
     });
 
-    let receiveBuffer: ArrayBuffer[] = [];
     let receivedSize = 0;
     let expectedSize = 0;
     let expectedHash = '';
     let startTime = 0;
+    
+    // OPFS state
+    let fileHandle: FileSystemFileHandle | null = null;
+    let writableStream: FileSystemWritableFileStream | null = null;
+    let chunkCount = 0;
+    
+    // Async write queue to handle race conditions and order
+    let writeQueue: ArrayBuffer[] = [];
+    let isWriting = false;
+
+    const processQueue = async () => {
+      if (isWriting || !writableStream) return;
+      isWriting = true;
+
+      try {
+        while (writeQueue.length > 0) {
+          const chunk = writeQueue.shift()!;
+          await writableStream.write(chunk);
+          receivedSize += chunk.byteLength;
+          chunkCount++;
+
+          if (receivedSize >= expectedSize && expectedSize > 0) {
+            // Close the stream immediately to flush to disk
+            await writableStream.close();
+            const endTime = performance.now();
+            
+            const elapsedSeconds = (endTime - startTime) / 1000;
+            const mbps = (expectedSize / (1024 * 1024)) / elapsedSeconds;
+
+            console.log(`[WebRTC] Transfer finished.`);
+            console.log(`[WebRTC] Received ${expectedSize} bytes directly to OPFS in ${chunkCount} chunks.`);
+            console.log(`[WebRTC] Elapsed time: ${elapsedSeconds.toFixed(2)}s`);
+            console.log(`[WebRTC] Throughput: ${mbps.toFixed(2)} MB/s`);
+
+            // Verify integrity by extracting the File from OPFS
+            if (fileHandle) {
+              console.log(`[WebRTC] Extracting File object from OPFS...`);
+              const file = await fileHandle.getFile();
+              
+              // Note: arrayBuffer() reads the whole file into RAM.
+              // For a 5GB file this will crash, but it works for our Milestone 2 & 3 test files.
+              const arrayBuffer = await file.arrayBuffer();
+              const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+              const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+              console.log(`[WebRTC] Sender SHA-256:   ${expectedHash}`);
+              console.log(`[WebRTC] Receiver SHA-256: ${hashHex}`);
+              
+              if (hashHex === expectedHash) {
+                console.log('[WebRTC] SUCCESS: Hashes match exactly from OPFS disk! 🚀');
+              } else {
+                console.error('[WebRTC] ERROR: Hash mismatch!');
+              }
+            }
+
+            // Cleanup
+            writableStream = null;
+            fileHandle = null;
+            receivedSize = 0;
+            expectedSize = 0;
+            break; // Stop processing since transfer is done
+          }
+        }
+      } catch (err) {
+        console.error('[WebRTC] Error writing chunk to OPFS:', err);
+      } finally {
+        isWriting = false;
+      }
+    };
 
     this.dataChannel.addEventListener('message', async (event) => {
       if (typeof event.data === 'string') {
@@ -96,43 +164,24 @@ export class WebRTCManager {
           console.log(`[WebRTC] Transfer started. Expecting ${msg.size} bytes. Expected Hash: ${msg.expectedHash}`);
           expectedSize = msg.size;
           expectedHash = msg.expectedHash;
-          receiveBuffer = [];
           receivedSize = 0;
+          chunkCount = 0;
+          writeQueue = [];
           startTime = performance.now();
+          
+          try {
+            const opfsRoot = await navigator.storage.getDirectory();
+            fileHandle = await opfsRoot.getFileHandle(msg.filename || 'transfer.bin', { create: true });
+            writableStream = await fileHandle.createWritable();
+            console.log(`[WebRTC] OPFS stream opened for ${msg.filename}`);
+            processQueue(); // Process any chunks that arrived while opening
+          } catch (err) {
+            console.error('[WebRTC] Failed to initialize OPFS:', err);
+          }
         }
       } else if (event.data instanceof ArrayBuffer) {
-        receiveBuffer.push(event.data);
-        receivedSize += event.data.byteLength;
-
-        if (receivedSize >= expectedSize && expectedSize > 0) {
-          const endTime = performance.now();
-          const elapsedSeconds = (endTime - startTime) / 1000;
-          const mbps = (expectedSize / (1024 * 1024)) / elapsedSeconds;
-
-          console.log(`[WebRTC] Transfer finished.`);
-          console.log(`[WebRTC] Received ${expectedSize} bytes in ${receiveBuffer.length} chunks.`);
-          console.log(`[WebRTC] Elapsed time: ${elapsedSeconds.toFixed(2)}s`);
-          console.log(`[WebRTC] Throughput: ${mbps.toFixed(2)} MB/s`);
-
-          const blob = new Blob(receiveBuffer);
-          const arrayBuffer = await blob.arrayBuffer();
-          const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-          const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-          console.log(`[WebRTC] Sender SHA-256:   ${expectedHash}`);
-          console.log(`[WebRTC] Receiver SHA-256: ${hashHex}`);
-          
-          if (hashHex === expectedHash) {
-            console.log('[WebRTC] SUCCESS: Hashes match exactly! 🚀');
-          } else {
-            console.error('[WebRTC] ERROR: Hash mismatch!');
-          }
-
-          // Cleanup
-          receiveBuffer = [];
-          receivedSize = 0;
-          expectedSize = 0;
-        }
+        writeQueue.push(event.data);
+        processQueue();
       }
     });
   }
