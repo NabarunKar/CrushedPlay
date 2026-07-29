@@ -1,10 +1,14 @@
 import express from 'express';
+import cors from 'cors';
 import { randomUUID } from 'node:crypto';
 import { createRoom, getRoom } from './rooms.js';
 
 export function createApp() {
   const app = express();
 
+  app.use(cors({
+    origin: ['https://crushed-play-client.vercel.app', 'http://localhost:5173']
+  }));
   app.use(express.json());
 
   app.get('/', (_request, response) => {
@@ -15,9 +19,9 @@ export function createApp() {
   });
 
   app.get('/health', (_request, response) => {
-    response.json({
-      status: 'ok',
-      uptime: process.uptime()
+    response.status(200).json({
+      status: 200,
+      message: 'OK'
     });
   });
 
