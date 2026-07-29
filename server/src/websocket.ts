@@ -1,7 +1,7 @@
 import { Server as HttpServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
-import { ClientMessage, ServerMessage } from './messages.js';
+import { ClientMessage, MediaIdentityMessage, ServerMessage } from './messages.js';
 import { getRoom, joinRoom, leaveRoom } from './rooms.js';
 
 type ClientState = {
@@ -41,6 +41,11 @@ export function createWebSocketServer(server: HttpServer) {
 
       if (message.type === 'play' || message.type === 'pause' || message.type === 'seek') {
         handlePlaybackMessage(socket, state, message, clients);
+        return;
+      }
+
+      if (message.type === 'media-selected') {
+        handleMediaSelected(socket, state, message.media, clients);
       }
     });
 
@@ -51,6 +56,23 @@ export function createWebSocketServer(server: HttpServer) {
   });
 
   return webSocketServer;
+}
+
+function handleMediaSelected(
+  socket: WebSocket,
+  state: ClientState,
+  media: MediaIdentityMessage,
+  clients: Map<WebSocket, ClientState>
+) {
+  if (!state.roomId) {
+    return;
+  }
+
+  for (const [client, clientState] of clients) {
+    if (client !== socket && clientState.roomId === state.roomId) {
+      send(client, { type: 'media-selected', media });
+    }
+  }
 }
 
 function handleJoinRoom(
@@ -193,9 +215,34 @@ function parseMessage(message: string): ClientMessage | undefined {
         time: parsed.time
       };
     }
+
+    if (parsed.type === 'media-selected' && isMediaIdentity(parsed.media)) {
+      return {
+        type: 'media-selected',
+        media: parsed.media
+      };
+    }
   } catch {
     return undefined;
   }
 
   return undefined;
+}
+
+function isMediaIdentity(value: unknown): value is Extract<ClientMessage, { type: 'media-selected' }>['media'] {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const media = value as Record<string, unknown>;
+
+  return (
+    typeof media.filename === 'string' &&
+    typeof media.sizeBytes === 'number' &&
+    Number.isFinite(media.sizeBytes) &&
+    typeof media.durationSeconds === 'number' &&
+    Number.isFinite(media.durationSeconds) &&
+    typeof media.mimeType === 'string' &&
+    typeof media.fingerprint === 'string'
+  );
 }

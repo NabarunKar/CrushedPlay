@@ -29,9 +29,21 @@ export type RoomSocketMessage =
       playing: boolean;
     }
   | {
+      type: 'media-selected';
+      media: MediaIdentityMessage;
+    }
+  | {
       type: 'error';
       message: string;
     };
+
+export type MediaIdentityMessage = {
+  filename: string;
+  sizeBytes: number;
+  durationSeconds: number;
+  mimeType: string;
+  fingerprint: string;
+};
 
 export type PlaybackCommand = Extract<RoomSocketMessage, { type: 'play' | 'pause' | 'seek' }>;
 
@@ -61,6 +73,12 @@ export function sendPlaybackCommand(socket: WebSocket | undefined, command: Play
   }
 }
 
+export function sendMediaSelected(socket: WebSocket | undefined, media: MediaIdentityMessage) {
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'media-selected', media }));
+  }
+}
+
 function parseMessage(message: unknown): RoomSocketMessage | undefined {
   if (typeof message !== 'string') {
     return undefined;
@@ -76,6 +94,7 @@ function parseMessage(message: unknown): RoomSocketMessage | undefined {
       parsed.type === 'play' ||
       parsed.type === 'pause' ||
       parsed.type === 'seek' ||
+      parsed.type === 'media-selected' ||
       parsed.type === 'error'
     ) {
       return parsed;

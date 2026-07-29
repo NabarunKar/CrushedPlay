@@ -20,7 +20,19 @@ export type ClientMessage =
       type: 'seek';
       time: number;
       playing: boolean;
+    }
+  | {
+      type: 'media-selected';
+      media: MediaIdentityMessage;
     };
+
+export type MediaIdentityMessage = {
+  filename: string;
+  sizeBytes: number;
+  durationSeconds: number;
+  mimeType: string;
+  fingerprint: string;
+};
 
 export type ServerMessage =
   | {
@@ -51,6 +63,10 @@ export type ServerMessage =
       type: 'seek';
       time: number;
       playing: boolean;
+    }
+  | {
+      type: 'media-selected';
+      media: MediaIdentityMessage;
     }
   | {
       type: 'error';

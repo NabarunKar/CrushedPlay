@@ -4,23 +4,33 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getRoom } from '../lib/api';
 import { getClientId } from '../lib/clientId';
-import { createRoomSocket, sendPlaybackCommand } from '../lib/roomSocket';
+import { getRoomHostId } from '../lib/hostIdentity';
+import { createRoomSocket, sendMediaSelected, sendPlaybackCommand } from '../lib/roomSocket';
+import { compareMediaIdentity, createMediaIdentity, formatBytes, MediaDifference, MediaIdentity, readVideoDuration } from '../media';
 import { formatDuration, localFileProvider, logPlayerEvent, PlaybackSession } from '../playback';
 
 type RoomStatus = 'loading' | 'ready' | 'not-found' | 'error';
+type VerificationStatus = 'none' | 'waiting' | 'verified' | 'mismatch';
 
 export function RoomPage() {
   const { roomId = 'unknown' } = useParams<{ roomId: string }>();
   const [status, setStatus] = useState<RoomStatus>('loading');
   const [users, setUsers] = useState(0);
   const [copyStatus, setCopyStatus] = useState('Copy Link');
+  const [isHost, setIsHost] = useState(false);
   const [playbackSession, setPlaybackSession] = useState<PlaybackSession | undefined>();
+  const [selectedMedia, setSelectedMedia] = useState<MediaIdentity | undefined>();
+  const [expectedMedia, setExpectedMedia] = useState<MediaIdentity | undefined>();
+  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>('none');
+  const [mediaDifferences, setMediaDifferences] = useState<MediaDifference[]>([]);
   const [duration, setDuration] = useState<number | undefined>();
   const [currentTime, setCurrentTime] = useState(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerRef = useRef<Plyr | null>(null);
   const socketRef = useRef<WebSocket | undefined>(undefined);
+  const isHostRef = useRef(false);
+  const selectedMediaRef = useRef<MediaIdentity | undefined>(undefined);
   const remoteActionRef = useRef(false);
   const playbackSessionRef = useRef<PlaybackSession | undefined>(undefined);
   const shareUrl = useMemo(() => window.location.href, []);
@@ -28,6 +38,14 @@ export function RoomPage() {
   useEffect(() => {
     playbackSessionRef.current = playbackSession;
   }, [playbackSession]);
+
+  useEffect(() => {
+    isHostRef.current = isHost;
+  }, [isHost]);
+
+  useEffect(() => {
+    selectedMediaRef.current = selectedMedia;
+  }, [selectedMedia]);
 
   useEffect(() => {
     let isMounted = true;
@@ -51,7 +69,7 @@ export function RoomPage() {
         setUsers(room.users);
         setStatus('ready');
 
-        const clientId = getClientId();
+        const clientId = getRoomHostId(roomId) ?? getClientId();
 
         socket = createRoomSocket(roomId, clientId, (message) => {
           if (!isMounted) {
@@ -67,8 +85,17 @@ export function RoomPage() {
             setUsers(message.users);
           }
 
+          if (message.type === 'joined-room') {
+            setIsHost(message.isHost);
+          }
+
           if (message.type === 'play' || message.type === 'pause' || message.type === 'seek') {
             applyRemotePlaybackCommand(message);
+          }
+
+          if (message.type === 'media-selected') {
+            setExpectedMedia(message.media);
+            compareAgainstExpectedMedia(message.media, selectedMediaRef.current);
           }
         });
         socketRef.current = socket;
@@ -176,11 +203,26 @@ export function RoomPage() {
     }
 
     const nextSession = await localFileProvider.createSession(file);
+    const fileDuration = await readVideoDuration(file);
+    const mediaIdentity = await createMediaIdentity(file, fileDuration);
     playbackSessionRef.current?.cleanup();
 
     setPlaybackSession(nextSession);
+    setSelectedMedia(mediaIdentity);
     setDuration(undefined);
     setCurrentTime(0);
+
+    if (isHostRef.current) {
+      setExpectedMedia(mediaIdentity);
+      setVerificationStatus('verified');
+      setMediaDifferences([]);
+      sendMediaSelected(socketRef.current, mediaIdentity);
+    } else if (expectedMedia) {
+      compareAgainstExpectedMedia(expectedMedia, mediaIdentity);
+    } else {
+      setVerificationStatus('waiting');
+      setMediaDifferences([]);
+    }
 
     if (videoRef.current) {
       videoRef.current.src = nextSession.sourceUrl;
@@ -188,6 +230,18 @@ export function RoomPage() {
     }
 
     event.target.value = '';
+  }
+
+  function compareAgainstExpectedMedia(expected: MediaIdentity, actual: MediaIdentity | undefined) {
+    if (!actual) {
+      setVerificationStatus('waiting');
+      setMediaDifferences([]);
+      return;
+    }
+
+    const differences = compareMediaIdentity(expected, actual);
+    setMediaDifferences(differences);
+    setVerificationStatus(differences.length === 0 ? 'verified' : 'mismatch');
   }
 
   function applyRemotePlaybackCommand(command: { type: 'play' | 'pause'; time: number } | { type: 'seek'; time: number; playing: boolean }) {
@@ -303,7 +357,11 @@ export function RoomPage() {
         <div className="player-shell">
           <p className="section-kicker">Video player container</p>
           <h2 id="video-heading">Local playback</h2>
-          <p className="role-badge">Shared controls enabled — anyone in the room can play, pause, or seek.</p>
+          <p className="role-badge">
+            {isHost
+              ? 'You are Host — your selected movie defines the room media.'
+              : 'Shared controls enabled — select the matching movie to verify.'}
+          </p>
           <input
             ref={fileInputRef}
             className="visually-hidden"
@@ -324,7 +382,7 @@ export function RoomPage() {
           <p className="section-kicker">Room information</p>
           <h2>Room</h2>
           <p className="room-code">{roomId}</p>
-          <p className="host-status">Shared playback controls enabled</p>
+          <p className="host-status">{isHost ? 'Host media identity source' : 'Guest media verification'}</p>
           <label className="share-label" htmlFor="share-url">
             Shareable URL
           </label>
@@ -342,16 +400,54 @@ export function RoomPage() {
         </section>
 
         <section className="panel">
-          <p className="section-kicker">Playback details</p>
-          <h2>Local movie</h2>
+          <p className="section-kicker">Media identity</p>
+          <h2>Selected Movie</h2>
+          <p className={`verification-status verification-${verificationStatus}`}>
+            {verificationStatus === 'verified'
+              ? '✓ Movie Verified'
+              : verificationStatus === 'mismatch'
+                ? 'Movie does not match.'
+                : verificationStatus === 'waiting'
+                  ? 'Waiting for matching file...'
+                  : 'No movie selected'}
+          </p>
+          {expectedMedia ? (
+            <div className="expected-media">
+              <p className="section-kicker">Movie selected by host</p>
+              <p>{expectedMedia.filename}</p>
+              <p>{formatDuration(expectedMedia.durationSeconds)} · {formatBytes(expectedMedia.sizeBytes)}</p>
+              <p>{expectedMedia.mimeType}</p>
+            </div>
+          ) : null}
+          {mediaDifferences.length > 0 ? (
+            <ul className="media-differences">
+              {mediaDifferences.map((difference) => (
+                <li key={difference.field}>
+                  <strong>{difference.field}</strong>: expected {difference.expected}, got {difference.actual}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <dl className="playback-details">
             <div>
               <dt>Filename</dt>
-              <dd>{playbackSession?.filename ?? 'No movie selected'}</dd>
+              <dd>{selectedMedia?.filename ?? playbackSession?.filename ?? 'No movie selected'}</dd>
+            </div>
+            <div>
+              <dt>Size</dt>
+              <dd>{selectedMedia ? formatBytes(selectedMedia.sizeBytes) : '—'}</dd>
+            </div>
+            <div>
+              <dt>MIME type</dt>
+              <dd>{selectedMedia?.mimeType ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>Fingerprint</dt>
+              <dd>{selectedMedia?.fingerprint ?? '—'}</dd>
             </div>
             <div>
               <dt>Duration</dt>
-              <dd>{formatDuration(duration)}</dd>
+              <dd>{formatDuration(selectedMedia?.durationSeconds ?? duration)}</dd>
             </div>
             <div>
               <dt>Current time</dt>
