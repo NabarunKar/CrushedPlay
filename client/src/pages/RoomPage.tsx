@@ -35,6 +35,7 @@ export function RoomPage() {
   const [activeSubtitle, setActiveSubtitle] = useState('None');
   const [duration, setDuration] = useState<number | undefined>();
   const [currentTime, setCurrentTime] = useState(0);
+  const [showDebug, setShowDebug] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const subtitleInputRef = useRef<HTMLInputElement | null>(null);
   const transferInputRef = useRef<HTMLInputElement | null>(null);
@@ -210,14 +211,14 @@ export function RoomPage() {
           socketRef.current,
           eventName === 'seek'
             ? {
-                type: 'seek',
-                time: video.currentTime,
-                playing: !video.paused
-              }
+              type: 'seek',
+              time: video.currentTime,
+              playing: !video.paused
+            }
             : {
-                type: eventName,
-                time: video.currentTime
-              }
+              type: eventName,
+              time: video.currentTime
+            }
         );
       }
     };
@@ -332,11 +333,11 @@ export function RoomPage() {
   async function handleTestTransfer(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    
+
     if (webrtcManagerRef.current) {
       webrtcManagerRef.current.transferFile(file).catch(console.error);
     }
-    
+
     event.target.value = '';
   }
 
@@ -495,7 +496,7 @@ export function RoomPage() {
           </button>
           {isHost ? (
             <button type="button" className="secondary-button" onClick={() => transferInputRef.current?.click()}>
-              Test Transfer
+              Send Movie ᯓ ✈︎ ⋆°•☁︎
             </button>
           ) : null}
           <button type="button" className="secondary-button load-subtitles-button" onClick={() => subtitleInputRef.current?.click()}>
@@ -522,7 +523,6 @@ export function RoomPage() {
           <p className="section-kicker">Room information</p>
           <h2>Room</h2>
           <p className="room-code">{roomId}</p>
-          <p className="host-status">{isHost ? 'Host media identity source' : 'Guest media verification'}</p>
           <label className="share-label" htmlFor="share-url">
             Shareable URL
           </label>
@@ -540,94 +540,8 @@ export function RoomPage() {
         </section>
 
         <section className="panel">
-          <p className="section-kicker">Subtitles</p>
-          <h2>Local subtitles</h2>
-          <dl className="playback-details">
-            <div>
-              <dt>Subtitle filename</dt>
-              <dd>{subtitleTracks[0]?.filename ?? 'No subtitles loaded'}</dd>
-            </div>
-            <div>
-              <dt>Language</dt>
-              <dd>{subtitleTracks[0]?.language ?? 'Unknown'}</dd>
-            </div>
-            <div>
-              <dt>Track count</dt>
-              <dd>{subtitleTracks.length}</dd>
-            </div>
-            <div>
-              <dt>External track count</dt>
-              <dd>{subtitleTracks.length}</dd>
-            </div>
-            <div>
-              <dt>Embedded track count</dt>
-              <dd>{embeddedSubtitleTracks.length}</dd>
-            </div>
-            <div>
-              <dt>Current active subtitle</dt>
-              <dd>{activeSubtitle}</dd>
-            </div>
-          </dl>
-          {embeddedSubtitleTracks.length > 0 ? (
-            <ul className="track-list">
-              {embeddedSubtitleTracks.map((track) => (
-                <li key={track.id}>
-                  <strong>{track.label}</strong> · {track.language} · {track.codec}
-                  {track.isDefault ? ' · Default' : ''}
-                  {track.isForced ? ' · Forced' : ''}
-                  {!track.playable ? ' · Metadata only' : ''}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
-
-        <section className="panel">
-          <p className="section-kicker">Video</p>
-          <h2>Container video</h2>
-          <dl className="playback-details">
-            <div>
-              <dt>Codec</dt>
-              <dd>{videoCodec}</dd>
-            </div>
-            <div>
-              <dt>Resolution</dt>
-              <dd>{videoResolution}</dd>
-            </div>
-          </dl>
-        </section>
-
-        <section className="panel">
-          <p className="section-kicker">Audio</p>
-          <h2>Audio tracks</h2>
-          <dl className="playback-details">
-            <div>
-              <dt>Current track</dt>
-              <dd>{currentAudioTrack}</dd>
-            </div>
-            <div>
-              <dt>Track count</dt>
-              <dd>{audioTracks.length}</dd>
-            </div>
-          </dl>
-          {audioTracks.length > 0 ? (
-            <ul className="track-list">
-              {audioTracks.map((track) => (
-                <li key={track.id}>
-                  <strong>#{track.index + 1}</strong> · {track.language} · {track.codec}
-                  {track.channels ? ` · ${track.channels} channels` : ''}
-                  {track.title ? ` · ${track.title}` : ''}
-                  {track.isDefault ? ' · Default' : ''}
-                  {!track.playable ? ' · Metadata only' : ''}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </section>
-
-        <section className="panel">
-          <p className="section-kicker">Media identity</p>
-          <h2>Selected Movie</h2>
+          <p className="section-kicker">Media</p>
+          <h2>Playback</h2>
           <p className={`verification-status verification-${verificationStatus}`}>
             {verificationStatus === 'verified'
               ? '✓ Movie Verified'
@@ -637,39 +551,10 @@ export function RoomPage() {
                   ? 'Waiting for matching file...'
                   : 'No movie selected'}
           </p>
-          {expectedMedia ? (
-            <div className="expected-media">
-              <p className="section-kicker">Movie selected by host</p>
-              <p>{expectedMedia.filename}</p>
-              <p>{formatDuration(expectedMedia.durationSeconds)} · {formatBytes(expectedMedia.sizeBytes)}</p>
-              <p>{expectedMedia.mimeType}</p>
-            </div>
-          ) : null}
-          {mediaDifferences.length > 0 ? (
-            <ul className="media-differences">
-              {mediaDifferences.map((difference) => (
-                <li key={difference.field}>
-                  <strong>{difference.field}</strong>: expected {difference.expected}, got {difference.actual}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <dl className="playback-details">
+          <dl className="playback-details" style={{ marginTop: '16px' }}>
             <div>
-              <dt>Filename</dt>
-              <dd>{selectedMedia?.filename ?? playbackSession?.filename ?? 'No movie selected'}</dd>
-            </div>
-            <div>
-              <dt>Size</dt>
-              <dd>{selectedMedia ? formatBytes(selectedMedia.sizeBytes) : '—'}</dd>
-            </div>
-            <div>
-              <dt>MIME type</dt>
-              <dd>{selectedMedia?.mimeType ?? '—'}</dd>
-            </div>
-            <div>
-              <dt>Fingerprint</dt>
-              <dd>{selectedMedia?.fingerprint ?? '—'}</dd>
+              <dt>Selected Movie</dt>
+              <dd>{selectedMedia?.filename ?? playbackSession?.filename ?? 'None'}</dd>
             </div>
             <div>
               <dt>Duration</dt>
@@ -680,8 +565,138 @@ export function RoomPage() {
               <dd>{formatDuration(currentTime)}</dd>
             </div>
           </dl>
+          <button type="button" className="secondary-button" style={{ marginTop: '24px', width: '100%' }} onClick={() => setShowDebug(true)}>
+            Debug Info for nerds
+          </button>
         </section>
       </aside>
+
+      {showDebug && (
+        <div className="debug-modal-backdrop" onClick={() => setShowDebug(false)}>
+          <div className="debug-modal panel" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <h2 style={{ margin: 0 }}>Debug Info for nerds</h2>
+              <button type="button" className="secondary-button" onClick={() => setShowDebug(false)}>Close</button>
+            </div>
+
+            <p className="host-status" style={{ margin: '0 0 24px 0' }}>{isHost ? 'Host media identity source' : 'Guest media verification'}</p>
+
+            <section className="debug-section">
+              <h3>Media Identity & Verification</h3>
+              {expectedMedia ? (
+                <div className="expected-media">
+                  <p className="section-kicker">Movie selected by host</p>
+                  <p>{expectedMedia.filename}</p>
+                  <p>{formatDuration(expectedMedia.durationSeconds)} · {formatBytes(expectedMedia.sizeBytes)}</p>
+                  <p>{expectedMedia.mimeType}</p>
+                </div>
+              ) : null}
+              {mediaDifferences.length > 0 ? (
+                <ul className="media-differences">
+                  {mediaDifferences.map((difference) => (
+                    <li key={difference.field}>
+                      <strong>{difference.field}</strong>: expected {difference.expected}, got {difference.actual}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <dl className="playback-details">
+                <div>
+                  <dt>Size</dt>
+                  <dd>{selectedMedia ? formatBytes(selectedMedia.sizeBytes) : '—'}</dd>
+                </div>
+                <div>
+                  <dt>MIME type</dt>
+                  <dd>{selectedMedia?.mimeType ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Fingerprint</dt>
+                  <dd>{selectedMedia?.fingerprint ?? '—'}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="debug-section">
+              <h3>Subtitles</h3>
+              <dl className="playback-details">
+                <div>
+                  <dt>Subtitle filename</dt>
+                  <dd>{subtitleTracks[0]?.filename ?? 'No subtitles loaded'}</dd>
+                </div>
+                <div>
+                  <dt>Language</dt>
+                  <dd>{subtitleTracks[0]?.language ?? 'Unknown'}</dd>
+                </div>
+                <div>
+                  <dt>External track count</dt>
+                  <dd>{subtitleTracks.length}</dd>
+                </div>
+                <div>
+                  <dt>Embedded track count</dt>
+                  <dd>{embeddedSubtitleTracks.length}</dd>
+                </div>
+                <div>
+                  <dt>Current active subtitle</dt>
+                  <dd>{activeSubtitle}</dd>
+                </div>
+              </dl>
+              {embeddedSubtitleTracks.length > 0 ? (
+                <ul className="track-list">
+                  {embeddedSubtitleTracks.map((track) => (
+                    <li key={track.id}>
+                      <strong>{track.label}</strong> · {track.language} · {track.codec}
+                      {track.isDefault ? ' · Default' : ''}
+                      {track.isForced ? ' · Forced' : ''}
+                      {!track.playable ? ' · Metadata only' : ''}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+
+            <section className="debug-section">
+              <h3>Video</h3>
+              <dl className="playback-details">
+                <div>
+                  <dt>Codec</dt>
+                  <dd>{videoCodec}</dd>
+                </div>
+                <div>
+                  <dt>Resolution</dt>
+                  <dd>{videoResolution}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="debug-section">
+              <h3>Audio</h3>
+              <dl className="playback-details">
+                <div>
+                  <dt>Current track</dt>
+                  <dd>{currentAudioTrack}</dd>
+                </div>
+                <div>
+                  <dt>Track count</dt>
+                  <dd>{audioTracks.length}</dd>
+                </div>
+              </dl>
+              {audioTracks.length > 0 ? (
+                <ul className="track-list">
+                  {audioTracks.map((track) => (
+                    <li key={track.id}>
+                      <strong>#{track.index + 1}</strong> · {track.language} · {track.codec}
+                      {track.channels ? ` · ${track.channels} channels` : ''}
+                      {track.title ? ` · ${track.title}` : ''}
+                      {track.isDefault ? ' · Default' : ''}
+                      {!track.playable ? ' · Metadata only' : ''}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -701,7 +716,7 @@ function getActiveSubtitleLabel(video: HTMLVideoElement | null) {
 }
 
 function getBrowserAudioTrackLabel(video: HTMLVideoElement | null, inspectedTracks: AudioTrack[]) {
-  const audioTracks = video ? (video as HTMLVideoElement & { audioTracks?: { length: number; [index: number]: { enabled: boolean; label?: string; language?: string } } }).audioTracks : undefined;
+  const audioTracks = video ? (video as HTMLVideoElement & { audioTracks?: { length: number;[index: number]: { enabled: boolean; label?: string; language?: string } } }).audioTracks : undefined;
 
   if (audioTracks?.length) {
     for (let index = 0; index < audioTracks.length; index += 1) {
