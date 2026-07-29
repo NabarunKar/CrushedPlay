@@ -19,6 +19,7 @@ export const localFileProvider: PlaybackProvider<File> = {
         mimeType: file.type || undefined,
         sizeBytes: file.size
       },
+      audioTracks: [],
       subtitleTracks: [],
       cleanup: () => URL.revokeObjectURL(sourceUrl)
     };

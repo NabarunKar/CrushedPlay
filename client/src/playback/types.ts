@@ -7,6 +7,20 @@ export type PlaybackVideo = {
   filename: string;
   mimeType?: string;
   sizeBytes?: number;
+  codec?: string;
+  width?: number;
+  height?: number;
+};
+
+export type AudioTrack = {
+  id: string;
+  index: number;
+  language: string;
+  codec: string;
+  channels?: number;
+  isDefault: boolean;
+  title?: string;
+  playable: boolean;
 };
 
 export type PlaybackSession = {
@@ -17,6 +31,7 @@ export type PlaybackSession = {
   mimeType?: string;
   sizeBytes?: number;
   video: PlaybackVideo;
+  audioTracks: AudioTrack[];
   subtitleTracks: SubtitleTrack[];
   cleanup: () => void;
 };

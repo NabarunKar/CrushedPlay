@@ -16,6 +16,8 @@ export async function createLocalSubtitleTrack(file: File): Promise<SubtitleTrac
     language: getLanguageFromFilename(file.name) ?? 'Unknown',
     kind: 'subtitles',
     isDefault: true,
+    source: 'external',
+    playable: true,
     cleanup: () => URL.revokeObjectURL(src)
   };
 }

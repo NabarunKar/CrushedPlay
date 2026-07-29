@@ -7,7 +7,8 @@ import { getClientId } from '../lib/clientId';
 import { getRoomHostId } from '../lib/hostIdentity';
 import { createRoomSocket, sendMediaSelected, sendPlaybackCommand } from '../lib/roomSocket';
 import { compareMediaIdentity, createMediaIdentity, formatBytes, MediaDifference, MediaIdentity, readVideoDuration } from '../media';
-import { formatDuration, localFileProvider, logPlayerEvent, PlaybackSession } from '../playback';
+import { formatDuration, inspectMediaFile, localFileProvider, logPlayerEvent, PlaybackSession } from '../playback';
+import { AudioTrack } from '../playback/types';
 import { createLocalSubtitleTrack, SubtitleTrack } from '../subtitles';
 
 type RoomStatus = 'loading' | 'ready' | 'not-found' | 'error';
@@ -25,6 +26,11 @@ export function RoomPage() {
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>('none');
   const [mediaDifferences, setMediaDifferences] = useState<MediaDifference[]>([]);
   const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
+  const [embeddedSubtitleTracks, setEmbeddedSubtitleTracks] = useState<SubtitleTrack[]>([]);
+  const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
+  const [videoCodec, setVideoCodec] = useState('Unknown');
+  const [videoResolution, setVideoResolution] = useState('Unknown');
+  const [currentAudioTrack, setCurrentAudioTrack] = useState('Browser default audio track');
   const [activeSubtitle, setActiveSubtitle] = useState('None');
   const [duration, setDuration] = useState<number | undefined>();
   const [currentTime, setCurrentTime] = useState(0);
@@ -223,11 +229,31 @@ export function RoomPage() {
     }
 
     const nextSession = await localFileProvider.createSession(file);
+    const mediaInspection = await inspectMediaFile(file);
     const fileDuration = await readVideoDuration(file);
     const mediaIdentity = await createMediaIdentity(file, fileDuration);
     playbackSessionRef.current?.cleanup();
 
-    setPlaybackSession(nextSession);
+    const enrichedSession: PlaybackSession = {
+      ...nextSession,
+      video: {
+        ...nextSession.video,
+        ...mediaInspection.video
+      },
+      audioTracks: mediaInspection.audioTracks,
+      subtitleTracks: mediaInspection.subtitleTracks
+    };
+
+    setPlaybackSession(enrichedSession);
+    setAudioTracks(mediaInspection.audioTracks);
+    setEmbeddedSubtitleTracks(mediaInspection.subtitleTracks);
+    setVideoCodec(mediaInspection.video.codec ?? 'Unknown');
+    setVideoResolution(
+      mediaInspection.video.width && mediaInspection.video.height
+        ? `${mediaInspection.video.width} × ${mediaInspection.video.height}`
+        : 'Unknown'
+    );
+    setCurrentAudioTrack(getBrowserAudioTrackLabel(videoRef.current, mediaInspection.audioTracks));
     setSelectedMedia(mediaIdentity);
     setDuration(undefined);
     setCurrentTime(0);
@@ -477,10 +503,73 @@ export function RoomPage() {
               <dd>{subtitleTracks.length}</dd>
             </div>
             <div>
+              <dt>External track count</dt>
+              <dd>{subtitleTracks.length}</dd>
+            </div>
+            <div>
+              <dt>Embedded track count</dt>
+              <dd>{embeddedSubtitleTracks.length}</dd>
+            </div>
+            <div>
               <dt>Current active subtitle</dt>
               <dd>{activeSubtitle}</dd>
             </div>
           </dl>
+          {embeddedSubtitleTracks.length > 0 ? (
+            <ul className="track-list">
+              {embeddedSubtitleTracks.map((track) => (
+                <li key={track.id}>
+                  <strong>{track.label}</strong> · {track.language} · {track.codec}
+                  {track.isDefault ? ' · Default' : ''}
+                  {track.isForced ? ' · Forced' : ''}
+                  {!track.playable ? ' · Metadata only' : ''}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+
+        <section className="panel">
+          <p className="section-kicker">Video</p>
+          <h2>Container video</h2>
+          <dl className="playback-details">
+            <div>
+              <dt>Codec</dt>
+              <dd>{videoCodec}</dd>
+            </div>
+            <div>
+              <dt>Resolution</dt>
+              <dd>{videoResolution}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="panel">
+          <p className="section-kicker">Audio</p>
+          <h2>Audio tracks</h2>
+          <dl className="playback-details">
+            <div>
+              <dt>Current track</dt>
+              <dd>{currentAudioTrack}</dd>
+            </div>
+            <div>
+              <dt>Track count</dt>
+              <dd>{audioTracks.length}</dd>
+            </div>
+          </dl>
+          {audioTracks.length > 0 ? (
+            <ul className="track-list">
+              {audioTracks.map((track) => (
+                <li key={track.id}>
+                  <strong>#{track.index + 1}</strong> · {track.language} · {track.codec}
+                  {track.channels ? ` · ${track.channels} channels` : ''}
+                  {track.title ? ` · ${track.title}` : ''}
+                  {track.isDefault ? ' · Default' : ''}
+                  {!track.playable ? ' · Metadata only' : ''}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </section>
 
         <section className="panel">
@@ -556,4 +645,21 @@ function getActiveSubtitleLabel(video: HTMLVideoElement | null) {
   }
 
   return 'None';
+}
+
+function getBrowserAudioTrackLabel(video: HTMLVideoElement | null, inspectedTracks: AudioTrack[]) {
+  const audioTracks = video ? (video as HTMLVideoElement & { audioTracks?: { length: number; [index: number]: { enabled: boolean; label?: string; language?: string } } }).audioTracks : undefined;
+
+  if (audioTracks?.length) {
+    for (let index = 0; index < audioTracks.length; index += 1) {
+      const track = audioTracks[index];
+
+      if (track.enabled) {
+        return track.label || track.language || `Browser audio track ${index + 1}`;
+      }
+    }
+  }
+
+  const defaultTrack = inspectedTracks.find((track) => track.isDefault) ?? inspectedTracks[0];
+  return defaultTrack ? `${defaultTrack.language} · ${defaultTrack.codec}` : 'Browser default audio track';
 }

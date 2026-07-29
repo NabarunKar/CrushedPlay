@@ -387,6 +387,14 @@ h2 {
   color: #ffb4c2;
 }
 
+.track-list {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding-left: 18px;
+  color: #dce1f7;
+}
+
 .playback-details div {
   display: grid;
   gap: 4px;
