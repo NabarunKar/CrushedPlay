@@ -8,6 +8,7 @@ import { getRoomHostId } from '../lib/hostIdentity';
 import { createRoomSocket, sendMediaSelected, sendPlaybackCommand } from '../lib/roomSocket';
 import { compareMediaIdentity, createMediaIdentity, formatBytes, MediaDifference, MediaIdentity, readVideoDuration } from '../media';
 import { formatDuration, localFileProvider, logPlayerEvent, PlaybackSession } from '../playback';
+import { createLocalSubtitleTrack, SubtitleTrack } from '../subtitles';
 
 type RoomStatus = 'loading' | 'ready' | 'not-found' | 'error';
 type VerificationStatus = 'none' | 'waiting' | 'verified' | 'mismatch';
@@ -23,14 +24,18 @@ export function RoomPage() {
   const [expectedMedia, setExpectedMedia] = useState<MediaIdentity | undefined>();
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>('none');
   const [mediaDifferences, setMediaDifferences] = useState<MediaDifference[]>([]);
+  const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrack[]>([]);
+  const [activeSubtitle, setActiveSubtitle] = useState('None');
   const [duration, setDuration] = useState<number | undefined>();
   const [currentTime, setCurrentTime] = useState(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const subtitleInputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerRef = useRef<Plyr | null>(null);
   const socketRef = useRef<WebSocket | undefined>(undefined);
   const isHostRef = useRef(false);
   const selectedMediaRef = useRef<MediaIdentity | undefined>(undefined);
+  const subtitleTracksRef = useRef<SubtitleTrack[]>([]);
   const remoteActionRef = useRef(false);
   const playbackSessionRef = useRef<PlaybackSession | undefined>(undefined);
   const shareUrl = useMemo(() => window.location.href, []);
@@ -46,6 +51,10 @@ export function RoomPage() {
   useEffect(() => {
     selectedMediaRef.current = selectedMedia;
   }, [selectedMedia]);
+
+  useEffect(() => {
+    subtitleTracksRef.current = subtitleTracks;
+  }, [subtitleTracks]);
 
   useEffect(() => {
     let isMounted = true;
@@ -128,7 +137,8 @@ export function RoomPage() {
     }
 
     playerRef.current = new Plyr(video, {
-      controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen']
+      controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'settings', 'fullscreen'],
+      captions: { active: true, language: 'auto', update: true }
     });
 
     return () => {
@@ -145,6 +155,7 @@ export function RoomPage() {
     }
 
     const events = ['play', 'pause', 'seeked', 'ended', 'timeupdate', 'loadedmetadata'] as const;
+    const updateActiveSubtitle = () => setActiveSubtitle(getActiveSubtitleLabel(video));
     const handleEvent = (event: Event) => {
       if (event.type === 'loadedmetadata') {
         setDuration(video.duration);
@@ -182,9 +193,17 @@ export function RoomPage() {
       video.addEventListener(eventName, handleEvent);
     }
 
+    for (const textTrack of video.textTracks) {
+      textTrack.addEventListener('change', updateActiveSubtitle);
+    }
+
     return () => {
       for (const eventName of events) {
         video.removeEventListener(eventName, handleEvent);
+      }
+
+      for (const textTrack of video.textTracks) {
+        textTrack.removeEventListener('change', updateActiveSubtitle);
       }
     };
   }, [status]);
@@ -192,6 +211,7 @@ export function RoomPage() {
   useEffect(() => {
     return () => {
       playbackSessionRef.current?.cleanup();
+      subtitleTracksRef.current.forEach((track) => track.cleanup());
     };
   }, []);
 
@@ -228,6 +248,26 @@ export function RoomPage() {
       videoRef.current.src = nextSession.sourceUrl;
       videoRef.current.load();
     }
+
+    event.target.value = '';
+  }
+
+  async function handleSubtitleSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const nextTrack = await createLocalSubtitleTrack(file);
+    subtitleTracksRef.current.forEach((track) => track.cleanup());
+    setSubtitleTracks([nextTrack]);
+    setActiveSubtitle(nextTrack.label);
+
+    window.setTimeout(() => {
+      playerRef.current?.toggleCaptions(true);
+      setActiveSubtitle(getActiveSubtitleLabel(videoRef.current));
+    }, 0);
 
     event.target.value = '';
   }
@@ -369,11 +409,32 @@ export function RoomPage() {
             accept="video/*,.mkv"
             onChange={handleMovieSelected}
           />
+          <input
+            ref={subtitleInputRef}
+            className="visually-hidden"
+            type="file"
+            accept=".srt,.vtt,text/vtt"
+            onChange={handleSubtitleSelected}
+          />
           <button type="button" className="primary-button select-movie-button" onClick={() => fileInputRef.current?.click()}>
             Select Movie
           </button>
+          <button type="button" className="secondary-button load-subtitles-button" onClick={() => subtitleInputRef.current?.click()}>
+            Load Subtitles
+          </button>
 
-          <video ref={videoRef} className="player-video" playsInline controls />
+          <video ref={videoRef} className="player-video" playsInline controls>
+            {subtitleTracks.map((track) => (
+              <track
+                key={track.id}
+                kind={track.kind}
+                src={track.src}
+                srcLang={track.language === 'Unknown' ? 'und' : track.language}
+                label={track.label}
+                default={track.isDefault}
+              />
+            ))}
+          </video>
         </div>
       </section>
 
@@ -397,6 +458,29 @@ export function RoomPage() {
           <h2>Users</h2>
           <p className="user-count">Connected Users: {users}</p>
           {users <= 1 ? <p>Waiting for others...</p> : null}
+        </section>
+
+        <section className="panel">
+          <p className="section-kicker">Subtitles</p>
+          <h2>Local subtitles</h2>
+          <dl className="playback-details">
+            <div>
+              <dt>Subtitle filename</dt>
+              <dd>{subtitleTracks[0]?.filename ?? 'No subtitles loaded'}</dd>
+            </div>
+            <div>
+              <dt>Language</dt>
+              <dd>{subtitleTracks[0]?.language ?? 'Unknown'}</dd>
+            </div>
+            <div>
+              <dt>Track count</dt>
+              <dd>{subtitleTracks.length}</dd>
+            </div>
+            <div>
+              <dt>Current active subtitle</dt>
+              <dd>{activeSubtitle}</dd>
+            </div>
+          </dl>
         </section>
 
         <section className="panel">
@@ -458,4 +542,18 @@ export function RoomPage() {
       </aside>
     </main>
   );
+}
+
+function getActiveSubtitleLabel(video: HTMLVideoElement | null) {
+  if (!video) {
+    return 'None';
+  }
+
+  for (const textTrack of video.textTracks) {
+    if (textTrack.mode === 'showing') {
+      return textTrack.label || textTrack.language || 'Unknown';
+    }
+  }
+
+  return 'None';
 }
