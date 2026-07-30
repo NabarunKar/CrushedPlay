@@ -50,7 +50,7 @@ Building CrushedPlay_ pushed me deep into browser internals, WebRTC, and some su
 
 ### 🎬 Face/Off
 
-When both the Host and Guest tried to establish the WebRTC tunnel simultaneously, their SDP Offers crossed paths in the signaling server. The connection deadlocked and the Guest never received the movie.
+When both the Host and Guest tried to establish the WebRTC tunnel simultaneously, their SDP Offers crossed paths in the signaling server and resulted in a race condition. The connection deadlocked and the Guest never received the movie.
 
 > [!TIP]
 > **Solution:** I enforced strict peer roles. The Host became the sole **Caller**, responsible for creating the DataChannel and SDP Offer, while the Guest always acted as the **Answerer**. This completely eliminated offer collisions.
