@@ -7,7 +7,7 @@ export function createApp() {
   const app = express();
 
   app.use(cors({
-    origin: ['https://crushed-play-client.vercel.app', 'http://localhost:5173'],
+    origin: ['https://crushed-play-client.vercel.app', 'https://crushedplay.vercel.app/', 'http://localhost:5173'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true
   }));
