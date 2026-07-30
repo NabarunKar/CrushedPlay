@@ -36,6 +36,7 @@ export function RoomPage() {
   const [duration, setDuration] = useState<number | undefined>();
   const [currentTime, setCurrentTime] = useState(0);
   const [showDebug, setShowDebug] = useState(false);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [transferProgress, setTransferProgress] = useState<{ transferred: number; total: number } | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -400,8 +401,11 @@ export function RoomPage() {
       return;
     }
 
-    void video.play().catch(() => {
-      console.warn('[player] remote play was blocked by the browser');
+    void video.play().catch((err) => {
+      if (err.name === 'NotAllowedError') {
+        console.warn('[player] remote play was blocked by the browser');
+        setAutoplayBlocked(true);
+      }
     });
   }
 
@@ -532,6 +536,24 @@ export function RoomPage() {
                 <p className="progress-text">
                   {Math.floor((transferProgress.transferred / transferProgress.total) * 100)}% ({formatBytes(transferProgress.transferred)} / {formatBytes(transferProgress.total)})
                 </p>
+              </div>
+            )}
+
+            {autoplayBlocked && (
+              <div style={{ marginTop: '16px', background: 'rgba(255, 111, 145, 0.14)', border: '1px solid rgba(255, 111, 145, 0.32)', borderRadius: '16px', padding: '16px' }}>
+                <p style={{ color: '#ffb4c2', fontWeight: 800, margin: '0 0 12px 0' }}>
+                  Your browser blocked remote playback.
+                </p>
+                <button 
+                  type="button" 
+                  className="primary-button" 
+                  onClick={() => {
+                    setAutoplayBlocked(false);
+                    attemptRemotePlay();
+                  }}
+                >
+                  Click to Sync & Play
+                </button>
               </div>
             )}
           </div>
