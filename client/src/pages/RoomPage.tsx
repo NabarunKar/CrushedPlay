@@ -425,7 +425,7 @@ export function RoomPage() {
       <main className="page page-centered">
         <section className="hero-card compact-card">
           <p className="eyebrow">Loading room</p>
-          <h1>CrushedPlay</h1>
+          <h1 className="app-title">CrushedPlay_</h1>
           <p className="lede">Checking whether this room exists...</p>
         </section>
       </main>
@@ -467,7 +467,7 @@ export function RoomPage() {
       <header className="room-header">
         <div>
           <p className="eyebrow">Watch room</p>
-          <h1>CrushedPlay</h1>
+          <h1 className="app-title">CrushedPlay_</h1>
         </div>
         <Link className="text-link" to="/">
           Back home

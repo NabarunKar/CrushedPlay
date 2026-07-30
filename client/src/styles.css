@@ -91,6 +91,30 @@ h1 {
   letter-spacing: -0.08em;
 }
 
+.title-container {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.title-container h1 {
+  margin-bottom: 0;
+}
+
+.app-title {
+  font-family: "Jersey 25", sans-serif;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.title-gif {
+  height: clamp(2.45rem, 8.1vw, 4.86rem);
+  width: auto;
+  object-fit: contain;
+}
+
 h2 {
   margin-bottom: 10px;
   font-size: 1.15rem;

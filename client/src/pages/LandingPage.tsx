@@ -36,8 +36,11 @@ export function LandingPage() {
   return (
     <main className="page page-centered">
       <section className="hero-card" aria-labelledby="landing-title">
-        <p className="eyebrow">Private watch parties for local files</p>
-        <h1 id="landing-title">CrushedPlay</h1>
+        <p className="eyebrow">Watch parties, simplified.</p>
+        <div className="title-container">
+          <h1 id="landing-title" className="app-title">CrushedPlay_</h1>
+          <img src="/assets/giant-clash.gif" alt="" className="title-gif" />
+        </div>
         <p className="lede">
           A clean foundation for watching videos together with friends over the internet.
         </p>
