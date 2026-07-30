@@ -48,26 +48,14 @@ When the Host clicks "Send Movie", the Vercel frontend does NOT upload the file 
 
 Building CrushedPlay_ pushed me deep into browser internals, WebRTC, and some surprisingly obscure edge cases. Here are a few of my favourite bugs that surfaced during development.
 
-<table>
-<tr>
-<td>
-
 ### 🎬 Face/Off
 
 When both the Host and Guest tried to establish the WebRTC tunnel simultaneously, their SDP Offers crossed paths in the signaling server. The connection deadlocked and the Guest never received the movie.
 
-**Solution:**  
-I enforced strict peer roles. The Host became the sole **Caller**, responsible for creating the DataChannel and SDP Offer, while the Guest always acted as the **Answerer**. This completely eliminated offer collisions.
+> [!TIP]
+> **Solution:** I enforced strict peer roles. The Host became the sole **Caller**, responsible for creating the DataChannel and SDP Offer, while the Guest always acted as the **Answerer**. This completely eliminated offer collisions.
 
-</td>
-</tr>
-</table>
-
-<br>
-
-<table>
-<tr>
-<td>
+---
 
 ### 🎭 Being John Malkovich
 
@@ -78,18 +66,10 @@ After a successful movie transfer, the Guest UI suddenly crashed with:
 **What happened?**  
 `Plyr` aggressively replaces and restructures the original `<video>` element by wrapping it in its own DOM hierarchy. React then attempted to insert the progress UI beside an element that no longer existed where it expected.
 
-**Solution:**  
-I isolated all React-controlled controls inside a stable wrapper `<div>`, preventing React's Virtual DOM from interfering with `Plyr`'s direct DOM manipulations.
+> [!TIP]
+> **Solution:** I isolated all React-controlled controls inside a stable wrapper `<div>`, preventing React's Virtual DOM from interfering with `Plyr`'s direct DOM manipulations.
 
-</td>
-</tr>
-</table>
-
-<br>
-
-<table>
-<tr>
-<td>
+---
 
 ### 🔇 A Quiet Place
 
@@ -98,18 +78,10 @@ If the Guest simply waited for a large movie transfer to finish without interact
 **What happened?**  
 Modern browsers block autoplay unless the user has interacted with the page. The Guest's `video.play()` call was rejected with a `NotAllowedError`.
 
-**Solution:**  
-The application now catches the rejected promise and displays a large **"Click to Sync & Play"** overlay. One click satisfies the browser's autoplay policy and immediately resumes synchronized playback.
+> [!TIP]
+> **Solution:** The application now catches the rejected promise and displays a large **"Click to Sync & Play"** overlay. One click satisfies the browser's autoplay policy and immediately resumes synchronized playback.
 
-</td>
-</tr>
-</table>
-
-<br>
-
-<table>
-<tr>
-<td>
+---
 
 ### 🐜 Ant-Man
 
@@ -128,9 +100,5 @@ Browsers send:
 
 Because the origin comparison is an exact string match, that single `/` caused every request to fail.
 
-**Solution:**  
-Deleted one character.
-
-</td>
-</tr>
-</table>
+> [!TIP]
+> **Solution:** Deleted one character.
