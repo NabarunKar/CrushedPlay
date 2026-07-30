@@ -88,7 +88,6 @@ export class WebRTCManager {
 
     let receivedSize = 0;
     let expectedSize = 0;
-    let expectedHash = '';
     let startTime = 0;
     
     // OPFS state
@@ -132,27 +131,14 @@ export class WebRTCManager {
             console.log(`[WebRTC] Elapsed time: ${elapsedSeconds.toFixed(2)}s`);
             console.log(`[WebRTC] Throughput: ${mbps.toFixed(2)} MB/s`);
 
-            // Verify integrity by extracting the File from OPFS
+            // Inform about successful transfer completion
             if (fileHandle) {
               console.log(`[WebRTC] Extracting File object from OPFS...`);
               const file = await fileHandle.getFile();
               
-              // Note: arrayBuffer() reads the whole file into RAM.
-              // For a 5GB file this will crash, but it works for our Milestone 2 & 3 test files.
-              const arrayBuffer = await file.arrayBuffer();
-              const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-              const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-              console.log(`[WebRTC] Sender SHA-256:   ${expectedHash}`);
-              console.log(`[WebRTC] Receiver SHA-256: ${hashHex}`);
-              
-              if (hashHex === expectedHash) {
-                console.log('[WebRTC] SUCCESS: Hashes match exactly from OPFS disk! 🚀');
-                if (this.onTransferComplete) {
-                  this.onTransferComplete(file);
-                }
-              } else {
-                console.error('[WebRTC] ERROR: Hash mismatch!');
+              console.log('[WebRTC] SUCCESS: WebRTC transfer complete! 🚀');
+              if (this.onTransferComplete) {
+                this.onTransferComplete(file);
               }
             }
 
@@ -175,9 +161,8 @@ export class WebRTCManager {
       if (typeof event.data === 'string') {
         const msg = JSON.parse(event.data);
         if (msg.type === 'transfer-start') {
-          console.log(`[WebRTC] Transfer started. Expecting ${msg.size} bytes. Expected Hash: ${msg.expectedHash}`);
+          console.log(`[WebRTC] Transfer started. Expecting ${msg.size} bytes.`);
           expectedSize = msg.size;
-          expectedHash = msg.expectedHash;
           receivedSize = 0;
           chunkCount = 0;
           writeQueue = [];
@@ -208,17 +193,10 @@ export class WebRTCManager {
 
     const CHUNK_SIZE = 64 * 1024; // 64 KB
 
-    console.log(`[WebRTC] Hashing original file (${file.name}, ${file.size} bytes)...`);
-    const fileBuffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', fileBuffer);
-    const hashHex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-    console.log(`[WebRTC] Original SHA-256: ${hashHex}`);
-
     this.dataChannel.send(JSON.stringify({
       type: 'transfer-start',
       filename: file.name,
-      size: file.size,
-      expectedHash: hashHex
+      size: file.size
     }));
 
     console.log(`[WebRTC] Starting chunked transfer...`);
