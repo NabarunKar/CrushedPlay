@@ -1,12 +1,13 @@
 import { Server as HttpServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
-import { ClientMessage, MediaIdentityMessage, ServerMessage } from './messages.js';
+import { ClientMessage, MediaIdentityMessage, Participant, ServerMessage } from './messages.js';
 import { getRoom, joinRoom, leaveRoom } from './rooms.js';
 
 type ClientState = {
   connectionId: string;
   clientId?: string;
+  username?: string;
   roomId?: string;
 };
 
@@ -30,7 +31,7 @@ export function createWebSocketServer(server: HttpServer) {
       }
 
       if (message.type === 'join-room') {
-        handleJoinRoom(socket, state, message.roomId, message.clientId, clients);
+        handleJoinRoom(socket, state, message.roomId, message.clientId, message.username, clients);
         return;
       }
 
@@ -104,6 +105,7 @@ function handleJoinRoom(
   state: ClientState,
   roomId: string,
   clientId: string,
+  username: string,
   clients: Map<WebSocket, ClientState>
 ) {
   const existingRoom = getRoom(roomId);
@@ -117,7 +119,15 @@ function handleJoinRoom(
     handleLeaveRoom(socket, state, clients);
   }
 
-  const room = joinRoom(roomId, state.connectionId);
+  const participant: Participant = {
+    connectionId: state.connectionId,
+    clientId,
+    username,
+    isHost: clientId === existingRoom.hostId,
+    joinedAt: Date.now()
+  };
+
+  const room = joinRoom(roomId, participant);
 
   if (!room) {
     send(socket, { type: 'room-not-found', roomId });
@@ -125,14 +135,23 @@ function handleJoinRoom(
   }
 
   state.clientId = clientId;
+  state.username = username;
   state.roomId = roomId;
   send(socket, {
     type: 'joined-room',
     roomId: room.roomId,
     users: room.users,
     hostId: room.hostId,
-    isHost: clientId === room.hostId
+    isHost: participant.isHost,
+    participants: room.participants
   });
+
+  for (const [client, clientState] of clients) {
+    if (client !== socket && clientState.roomId === roomId) {
+      send(client, { type: 'participant-joined', participant });
+    }
+  }
+
   broadcastUserCount(room.roomId, room.users, clients);
 }
 
@@ -176,10 +195,23 @@ function handleLeaveRoom(
     return;
   }
 
+  const leavingConnectionId = state.connectionId;
+  const leavingClientId = state.clientId ?? '';
+
   state.roomId = undefined;
-  const room = leaveRoom(roomId, state.connectionId);
+  const room = leaveRoom(roomId, leavingConnectionId);
 
   if (room) {
+    for (const [client, clientState] of clients) {
+      if (client !== socket && clientState.roomId === roomId) {
+        send(client, {
+          type: 'participant-left',
+          connectionId: leavingConnectionId,
+          clientId: leavingClientId
+        });
+      }
+    }
+
     broadcastUserCount(room.roomId, room.users, clients);
   }
 
@@ -206,11 +238,18 @@ function parseMessage(message: string): ClientMessage | undefined {
   try {
     const parsed = JSON.parse(message) as Partial<ClientMessage>;
 
-    if (parsed.type === 'join-room' && typeof parsed.roomId === 'string' && typeof parsed.clientId === 'string') {
+    if (parsed.type === 'join-room' && typeof parsed.roomId === 'string' && typeof parsed.clientId === 'string' && typeof parsed.username === 'string') {
+      const trimmedUsername = parsed.username.trim();
+
+      if (trimmedUsername.length === 0 || trimmedUsername.length > 24) {
+        return undefined;
+      }
+
       return {
         type: 'join-room',
         roomId: parsed.roomId,
-        clientId: parsed.clientId
+        clientId: parsed.clientId,
+        username: trimmedUsername
       };
     }
 

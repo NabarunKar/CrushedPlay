@@ -2,21 +2,41 @@ import { FormEvent, useState } from 'react';
 import { useHistory } from 'react-router-dom';
 import { createRoom } from '../lib/api';
 import { saveRoomHostId } from '../lib/hostIdentity';
+import { MAX_USERNAME_LENGTH, validateUsername } from '../lib/username';
 
 export function LandingPage() {
   const history = useHistory();
+  const [username, setUsername] = useState('');
   const [roomCode, setRoomCode] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState('');
 
+  function resolveUsername(): string | undefined {
+    const result = validateUsername(username);
+
+    if (!result.ok) {
+      setError(result.error);
+      return undefined;
+    }
+
+    return result.value;
+  }
+
   async function handleCreateRoom() {
-    setIsCreating(true);
     setError('');
+
+    const validUsername = resolveUsername();
+
+    if (!validUsername) {
+      return;
+    }
+
+    setIsCreating(true);
 
     try {
       const room = await createRoom();
       saveRoomHostId(room.roomId, room.hostId);
-      history.push(`/room/${room.roomId}`);
+      history.push(`/room/${room.roomId}`, { username: validUsername });
     } catch {
       setError('Unable to create a room. Please try again.');
       setIsCreating(false);
@@ -25,11 +45,18 @@ export function LandingPage() {
 
   function handleJoinRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setError('');
+
+    const validUsername = resolveUsername();
+
+    if (!validUsername) {
+      return;
+    }
 
     const trimmedRoomCode = roomCode.trim();
 
     if (trimmedRoomCode.length > 0) {
-      history.push(`/room/${encodeURIComponent(trimmedRoomCode)}`);
+      history.push(`/room/${encodeURIComponent(trimmedRoomCode)}`, { username: validUsername });
     }
   }
 
@@ -46,6 +73,21 @@ export function LandingPage() {
         </p>
 
         <div className="actions">
+          <form className="join-form" onSubmit={(event) => event.preventDefault()}>
+            <label htmlFor="username">Your username</label>
+            <div className="input-row">
+              <input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder="e.g. Dunkmaster"
+                autoComplete="off"
+                maxLength={MAX_USERNAME_LENGTH}
+              />
+            </div>
+          </form>
+
           <button type="button" className="primary-button" onClick={handleCreateRoom} disabled={isCreating}>
             {isCreating ? 'Creating...' : 'Create Room'}
           </button>

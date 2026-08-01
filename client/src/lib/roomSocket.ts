@@ -5,6 +5,7 @@ export type RoomSocketMessage =
       users: number;
       hostId: string;
       isHost: boolean;
+      participants: Participant[];
     }
   | {
       type: 'user-count';
@@ -14,6 +15,15 @@ export type RoomSocketMessage =
   | {
       type: 'room-not-found';
       roomId: string;
+    }
+  | {
+      type: 'participant-joined';
+      participant: Participant;
+    }
+  | {
+      type: 'participant-left';
+      connectionId: string;
+      clientId: string;
     }
   | {
       type: 'play';
@@ -59,14 +69,32 @@ export type MediaIdentityMessage = {
   fingerprint: string;
 };
 
+/**
+ * A participant is one WebSocket connection in a room. Identity is scoped
+ * to the connection: two tabs from the same browser are two participants.
+ * Mirrors the shape defined in `server/src/messages.ts`.
+ */
+export type Participant = {
+  connectionId: string;
+  clientId: string;
+  username: string;
+  isHost: boolean;
+  joinedAt: number;
+};
+
 export type PlaybackCommand = Extract<RoomSocketMessage, { type: 'play' | 'pause' | 'seek' }>;
 
-export function createRoomSocket(roomId: string, clientId: string, onMessage: (message: RoomSocketMessage) => void) {
+export function createRoomSocket(
+  roomId: string,
+  clientId: string,
+  username: string,
+  onMessage: (message: RoomSocketMessage) => void
+) {
   const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3000';
   const socket = new WebSocket(wsUrl);
 
   socket.addEventListener('open', () => {
-    socket.send(JSON.stringify({ type: 'join-room', roomId, clientId }));
+    socket.send(JSON.stringify({ type: 'join-room', roomId, clientId, username }));
   });
 
   socket.addEventListener('message', (event) => {
@@ -115,6 +143,8 @@ function parseMessage(message: unknown): RoomSocketMessage | undefined {
       parsed.type === 'joined-room' ||
       parsed.type === 'user-count' ||
       parsed.type === 'room-not-found' ||
+      parsed.type === 'participant-joined' ||
+      parsed.type === 'participant-left' ||
       parsed.type === 'play' ||
       parsed.type === 'pause' ||
       parsed.type === 'seek' ||

@@ -1,24 +1,30 @@
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { getRoom } from '../lib/api';
 import { getClientId } from '../lib/clientId';
 import { getRoomHostId } from '../lib/hostIdentity';
-import { createRoomSocket, sendMediaSelected, sendPlaybackCommand } from '../lib/roomSocket';
+import { createRoomSocket, sendMediaSelected, sendPlaybackCommand, Participant } from '../lib/roomSocket';
+import { addParticipant as storeAddParticipant, getParticipants, removeParticipant as storeRemoveParticipant, reset as resetParticipants, setSnapshot as setParticipantsSnapshot, subscribe as subscribeParticipants } from '../lib/participants';
 import { compareMediaIdentity, createMediaIdentity, formatBytes, MediaDifference, MediaIdentity, readVideoDuration } from '../media';
 import { formatDuration, inspectMediaFile, localFileProvider, logPlayerEvent, PlaybackSession } from '../playback';
 import { AudioTrack } from '../playback/types';
 import { createLocalSubtitleTrack, SubtitleTrack } from '../subtitles';
 import { WebRTCManager } from '../lib/webrtcManager';
+import { UsernameModal } from '../components/UsernameModal';
 
 type RoomStatus = 'loading' | 'ready' | 'not-found' | 'error';
 type VerificationStatus = 'none' | 'waiting' | 'verified' | 'mismatch';
 
 export function RoomPage() {
   const { roomId = 'unknown' } = useParams<{ roomId: string }>();
+  const location = useLocation<{ username?: string } | undefined>();
+  const initialUsername = typeof location.state?.username === 'string' ? location.state.username : undefined;
+  const [username, setUsername] = useState<string | undefined>(initialUsername);
   const [status, setStatus] = useState<RoomStatus>('loading');
   const [users, setUsers] = useState(0);
+  const [participants, setParticipants] = useState<Participant[]>(() => getParticipants());
   const [copyStatus, setCopyStatus] = useState('Copy Link');
   const [isHost, setIsHost] = useState(false);
   const [playbackSession, setPlaybackSession] = useState<PlaybackSession | undefined>();
@@ -75,8 +81,23 @@ export function RoomPage() {
   }, [subtitleTracks]);
 
   useEffect(() => {
+    const unsubscribe = subscribeParticipants(setParticipants);
+    return () => {
+      unsubscribe();
+      resetParticipants();
+    };
+  }, []);
+
+  useEffect(() => {
     let isMounted = true;
     let socket: WebSocket | undefined;
+
+    if (!username) {
+      // Wait for the user to submit a username via <UsernameModal> before
+      // touching the room API or opening a WebSocket. This effect will re-run
+      // as soon as `username` is set.
+      return;
+    }
 
     async function loadRoom() {
       setStatus('loading');
@@ -98,7 +119,7 @@ export function RoomPage() {
 
         const clientId = getRoomHostId(roomId) ?? getClientId();
 
-        socket = createRoomSocket(roomId, clientId, (message) => {
+        socket = createRoomSocket(roomId, clientId, username, (message) => {
           if (!isMounted) {
             return;
           }
@@ -111,6 +132,7 @@ export function RoomPage() {
           if (message.type === 'joined-room') {
             setIsHost(message.isHost);
             isHostRef.current = message.isHost;
+            setParticipantsSnapshot(message.participants);
           }
 
           if (message.type === 'joined-room' || message.type === 'user-count') {
@@ -118,6 +140,14 @@ export function RoomPage() {
             if (isHostRef.current && message.users > 1) {
               webrtcManagerRef.current?.startAsHost().catch(console.error);
             }
+          }
+
+          if (message.type === 'participant-joined') {
+            storeAddParticipant(message.participant);
+          }
+
+          if (message.type === 'participant-left') {
+            storeRemoveParticipant(message.connectionId);
           }
 
           if (message.type === 'play' || message.type === 'pause' || message.type === 'seek') {
@@ -168,7 +198,7 @@ export function RoomPage() {
       webrtcManagerRef.current?.destroy();
       webrtcManagerRef.current = null;
     };
-  }, [roomId]);
+  }, [roomId, username]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -420,6 +450,18 @@ export function RoomPage() {
     }
   }
 
+  if (!username) {
+    return (
+      <main className="page page-centered">
+        <UsernameModal
+          description="Pick a display name for this watch party. It will be visible to everyone in the room."
+          submitLabel="Join Room"
+          onSubmit={(name) => setUsername(name)}
+        />
+      </main>
+    );
+  }
+
   if (status === 'loading') {
     return (
       <main className="page page-centered">
@@ -591,6 +633,16 @@ export function RoomPage() {
           <p className="section-kicker">Connected users</p>
           <h2>Users</h2>
           <p className="user-count">Connected Users: {users}</p>
+          {participants.length > 0 ? (
+            <ul className="participant-list">
+              {participants.map((participant) => (
+                <li key={participant.connectionId} className="participant-item">
+                  <span className="participant-name">{participant.username}</span>
+                  {participant.isHost ? <span className="participant-badge">HOST</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           {users <= 1 ? <p>Waiting for others...</p> : null}
         </section>
 

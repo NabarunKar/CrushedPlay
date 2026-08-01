@@ -1,4 +1,5 @@
 import { customAlphabet } from 'nanoid';
+import { Participant } from './messages.js';
 
 const createRoomId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 8);
 
@@ -6,12 +7,13 @@ export type RoomSnapshot = {
   roomId: string;
   users: number;
   hostId: string;
+  participants: Participant[];
 };
 
 type Room = {
   roomId: string;
   hostId: string;
-  connections: Set<string>;
+  connections: Map<string, Participant>;
   cleanupTimer?: NodeJS.Timeout;
 };
 
@@ -27,7 +29,7 @@ export function createRoom(hostId: string): RoomSnapshot {
   const room: Room = {
     roomId,
     hostId,
-    connections: new Set<string>()
+    connections: new Map<string, Participant>()
   };
 
   rooms.set(roomId, room);
@@ -45,7 +47,7 @@ export function getRoom(roomId: string): RoomSnapshot | undefined {
   return getRoomSnapshot(room);
 }
 
-export function joinRoom(roomId: string, connectionId: string): RoomSnapshot | undefined {
+export function joinRoom(roomId: string, participant: Participant): RoomSnapshot | undefined {
   const room = rooms.get(roomId);
 
   if (!room) {
@@ -57,7 +59,7 @@ export function joinRoom(roomId: string, connectionId: string): RoomSnapshot | u
     room.cleanupTimer = undefined;
   }
 
-  room.connections.add(connectionId);
+  room.connections.set(participant.connectionId, participant);
   return getRoomSnapshot(room);
 }
 
@@ -87,6 +89,7 @@ function getRoomSnapshot(room: Room): RoomSnapshot {
   return {
     roomId: room.roomId,
     users: room.connections.size,
-    hostId: room.hostId
+    hostId: room.hostId,
+    participants: Array.from(room.connections.values())
   };
 }

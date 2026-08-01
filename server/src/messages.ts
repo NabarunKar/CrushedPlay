@@ -3,6 +3,7 @@ export type ClientMessage =
       type: 'join-room';
       roomId: string;
       clientId: string;
+      username: string;
     }
   | {
       type: 'leave-room';
@@ -46,6 +47,14 @@ export type MediaIdentityMessage = {
   fingerprint: string;
 };
 
+export type Participant = {
+  connectionId: string;
+  clientId: string;
+  username: string;
+  isHost: boolean;
+  joinedAt: number;
+};
+
 export type ServerMessage =
   | {
       type: 'joined-room';
@@ -53,6 +62,16 @@ export type ServerMessage =
       users: number;
       hostId: string;
       isHost: boolean;
+      participants: Participant[];
+    }
+  | {
+      type: 'participant-joined';
+      participant: Participant;
+    }
+  | {
+      type: 'participant-left';
+      connectionId: string;
+      clientId: string;
     }
   | {
       type: 'user-count';
