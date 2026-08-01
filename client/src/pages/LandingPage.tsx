@@ -85,14 +85,13 @@ export function LandingPage() {
                 autoComplete="off"
                 maxLength={MAX_USERNAME_LENGTH}
               />
+              <button type="button" className="primary-button" onClick={handleCreateRoom} disabled={isCreating}>
+                {isCreating ? 'Creating...' : 'Create'}
+              </button>
             </div>
           </form>
 
-          <button type="button" className="primary-button" onClick={handleCreateRoom} disabled={isCreating}>
-            {isCreating ? 'Creating...' : 'Create Room'}
-          </button>
-
-          <form className="join-form" onSubmit={handleJoinRoom}>
+          <form className="join-form" onSubmit={handleJoinRoom} style={{ marginTop: '24px' }}>
             <label htmlFor="room-code">Join Room</label>
             <div className="input-row">
               <input

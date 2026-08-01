@@ -7,7 +7,7 @@ import { getClientId } from '../lib/clientId';
 import { getRoomHostId } from '../lib/hostIdentity';
 import { createRoomSocket, sendMediaSelected, sendPlaybackCommand, sendChatMessage, Participant, ChatMessagePayload } from '../lib/roomSocket';
 import { addParticipant as storeAddParticipant, getParticipants, removeParticipant as storeRemoveParticipant, reset as resetParticipants, setSnapshot as setParticipantsSnapshot, subscribe as subscribeParticipants } from '../lib/participants';
-import { appendMessage, getMessages, reset as resetChat, subscribe as subscribeChat } from '../lib/chatStore';
+import { appendChatMessage, appendSystemEvent, appendPlaybackEvent, getTimeline, reset as resetTimeline, subscribe as subscribeTimeline, TimelineItem } from '../lib/timelineStore';
 import { compareMediaIdentity, createMediaIdentity, formatBytes, MediaDifference, MediaIdentity, readVideoDuration } from '../media';
 import { formatDuration, inspectMediaFile, localFileProvider, logPlayerEvent, PlaybackSession } from '../playback';
 import { AudioTrack } from '../playback/types';
@@ -26,7 +26,7 @@ export function RoomPage() {
   const [status, setStatus] = useState<RoomStatus>('loading');
   const [users, setUsers] = useState(0);
   const [participants, setParticipants] = useState<Participant[]>(() => getParticipants());
-  const [messages, setMessages] = useState<ChatMessagePayload[]>(() => getMessages());
+  const [timeline, setTimeline] = useState<TimelineItem[]>(() => getTimeline());
   const localClientId = getClientId();
   const localConnectionId = participants.find(p => p.clientId === localClientId)?.connectionId;
   const [chatInput, setChatInput] = useState('');
@@ -95,7 +95,7 @@ export function RoomPage() {
         messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
       }
     }
-  }, [messages, isChatExpanded]);
+  }, [timeline, isChatExpanded]);
 
   useEffect(() => {
     selectedMediaRef.current = selectedMedia;
@@ -111,12 +111,12 @@ export function RoomPage() {
 
   useEffect(() => {
     const unsubscribeParticipants = subscribeParticipants(setParticipants);
-    const unsubscribeChat = subscribeChat(setMessages);
+    const unsubscribeTimeline = subscribeTimeline(setTimeline);
     return () => {
       unsubscribeParticipants();
-      unsubscribeChat();
+      unsubscribeTimeline();
       resetParticipants();
-      resetChat();
+      resetTimeline();
     };
   }, []);
 
@@ -178,20 +178,36 @@ export function RoomPage() {
 
           if (message.type === 'participant-joined') {
             storeAddParticipant(message.participant);
+            appendSystemEvent(`🍿 ${message.participant.username} joined the watch party.`);
           }
 
           if (message.type === 'chat-message') {
-            appendMessage(message.message);
+            appendChatMessage(message.message);
             if (!isChatExpandedRef.current) {
               setUnreadCount((c) => c + 1);
             }
           }
 
           if (message.type === 'participant-left') {
+            const p = getParticipants().find(x => x.connectionId === message.connectionId);
+            if (p) {
+              appendSystemEvent(`🚪 ${p.username} left the room.`);
+            }
             storeRemoveParticipant(message.connectionId);
           }
 
           if (message.type === 'play' || message.type === 'pause' || message.type === 'seek') {
+            const p = getParticipants().find(x => x.connectionId === message.senderConnectionId);
+            const senderName = p?.username ?? 'Someone';
+            
+            if (message.type === 'play') {
+              appendPlaybackEvent(`▶ ${senderName} started playback.`, 'play', message.senderConnectionId || 'unknown');
+            } else if (message.type === 'pause') {
+              appendPlaybackEvent(`⏸ ${senderName} paused playback.`, 'pause', message.senderConnectionId || 'unknown');
+            } else if (message.type === 'seek') {
+              appendPlaybackEvent(`⏩ ${senderName} skipped to ${formatDuration(message.time)}.`, 'seek', message.senderConnectionId || 'unknown');
+            }
+            
             applyRemotePlaybackCommand(message);
           }
 
@@ -213,10 +229,16 @@ export function RoomPage() {
         socketRef.current = socket;
         webrtcManagerRef.current = new WebRTCManager(socket, (file: File) => {
           setTransferProgress(null);
+          appendSystemEvent('✅ Movie transfer completed.');
           loadMovieFromFile(file).catch(console.error);
         });
         webrtcManagerRef.current.onProgress = (transferred, total) => {
-          setTransferProgress({ transferred, total });
+          setTransferProgress(prev => {
+            if (prev === null) {
+              appendSystemEvent('📥 Movie transfer started.');
+            }
+            return { transferred, total };
+          });
         };
       } catch {
         if (isMounted) {
@@ -283,6 +305,16 @@ export function RoomPage() {
       if (eventName === 'play' || eventName === 'pause' || eventName === 'seek') {
         if (remoteActionRef.current) {
           return;
+        }
+
+        const localId = getParticipants().find(p => p.clientId === getClientId())?.connectionId || 'unknown';
+
+        if (eventName === 'play') {
+          appendPlaybackEvent(`▶ You started playback.`, 'play', localId);
+        } else if (eventName === 'pause') {
+          appendPlaybackEvent(`⏸ You paused playback.`, 'pause', localId);
+        } else if (eventName === 'seek') {
+          appendPlaybackEvent(`⏩ You skipped to ${formatDuration(video.currentTime)}.`, 'seek', localId);
         }
 
         sendPlaybackCommand(
@@ -414,7 +446,9 @@ export function RoomPage() {
     if (!file) return;
 
     if (webrtcManagerRef.current) {
+      appendSystemEvent('📥 Movie transfer started.');
       await webrtcManagerRef.current.transferFile(file).catch(console.error);
+      appendSystemEvent('✅ Movie transfer completed.');
       setTransferProgress(null);
     }
 
@@ -599,7 +633,10 @@ export function RoomPage() {
                 onClick={() => {
                   if (selectedFile) {
                     if (webrtcManagerRef.current) {
-                      webrtcManagerRef.current.transferFile(selectedFile).catch(console.error);
+                      appendSystemEvent('📥 Movie transfer started.');
+                      webrtcManagerRef.current.transferFile(selectedFile)
+                        .then(() => appendSystemEvent('✅ Movie transfer completed.'))
+                        .catch(console.error);
                     }
                   } else {
                     transferInputRef.current?.click();
@@ -709,7 +746,16 @@ export function RoomPage() {
                   isScrolledToBottomRef.current = target.scrollHeight - target.scrollTop - target.clientHeight < 50;
                 }}
               >
-                {messages.map((msg) => {
+                {timeline.map((item) => {
+                  if (item.kind === 'system') {
+                    return (
+                      <div key={item.id} className="system-event">
+                        {item.text}
+                      </div>
+                    );
+                  }
+
+                  const msg = item.message;
                   const isSelf = msg.senderConnectionId === localConnectionId;
                   const timeString = new Intl.DateTimeFormat('en-US', {
                     hour: 'numeric',
@@ -729,7 +775,7 @@ export function RoomPage() {
                     </div>
                   );
                 })}
-                {messages.length === 0 && <p style={{ color: 'var(--color-text-dim)', textAlign: 'center', marginTop: '16px' }}>{'Pretty empty here :( 📭'}</p>}
+                {timeline.length === 0 && <p style={{ color: 'var(--color-text-dim)', textAlign: 'center', marginTop: '16px' }}>{'Pretty empty here :( 📭'}</p>}
                 <div ref={messagesEndRef} />
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>

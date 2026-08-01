@@ -626,6 +626,15 @@ h2 {
   margin-left: 8px;
 }
 
+.system-event {
+  text-align: center;
+  font-style: italic;
+  color: #8c90a3;
+  font-size: 0.85rem;
+  margin: 12px 0;
+  padding: 0 16px;
+}
+
 @media (max-width: 860px) {
   .room-layout {
     grid-template-columns: 1fr;

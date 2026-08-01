@@ -212,9 +212,9 @@ function handlePlaybackMessage(
   for (const [client, clientState] of clients) {
     if (client !== socket && clientState.roomId === state.roomId) {
       if (message.type === 'seek') {
-        send(client, { type: 'seek', time: message.time, playing: message.playing });
+        send(client, { type: 'seek', time: message.time, playing: message.playing, senderConnectionId: state.connectionId });
       } else {
-        send(client, { type: message.type, time: message.time });
+        send(client, { type: message.type, time: message.time, senderConnectionId: state.connectionId });
       }
     }
   }

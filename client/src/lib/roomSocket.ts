@@ -28,15 +28,18 @@ export type RoomSocketMessage =
   | {
       type: 'play';
       time: number;
+      senderConnectionId?: string;
     }
   | {
       type: 'pause';
       time: number;
+      senderConnectionId?: string;
     }
   | {
       type: 'seek';
       time: number;
       playing: boolean;
+      senderConnectionId?: string;
     }
   | {
       type: 'media-selected';
