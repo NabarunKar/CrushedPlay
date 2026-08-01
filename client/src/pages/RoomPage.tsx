@@ -27,7 +27,11 @@ export function RoomPage() {
   const [users, setUsers] = useState(0);
   const [participants, setParticipants] = useState<Participant[]>(() => getParticipants());
   const [messages, setMessages] = useState<ChatMessagePayload[]>(() => getMessages());
+  const localClientId = getClientId();
+  const localConnectionId = participants.find(p => p.clientId === localClientId)?.connectionId;
   const [chatInput, setChatInput] = useState('');
+  const [isChatExpanded, setIsChatExpanded] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [copyStatus, setCopyStatus] = useState('Copy Link');
   const [isHost, setIsHost] = useState(false);
   const [playbackSession, setPlaybackSession] = useState<PlaybackSession | undefined>();
@@ -61,6 +65,9 @@ export function RoomPage() {
   const remoteActionRef = useRef(false);
   const playbackSessionRef = useRef<PlaybackSession | undefined>(undefined);
   const webrtcManagerRef = useRef<WebRTCManager | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const isChatExpandedRef = useRef(isChatExpanded);
   const shareUrl = useMemo(() => window.location.href, []);
 
   useEffect(() => {
@@ -70,6 +77,26 @@ export function RoomPage() {
   useEffect(() => {
     isHostRef.current = isHost;
   }, [isHost]);
+
+  useEffect(() => {
+    isChatExpandedRef.current = isChatExpanded;
+    if (isChatExpanded) {
+      setUnreadCount(0);
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+      }
+    }
+  }, [isChatExpanded]);
+
+  useEffect(() => {
+    if (messagesContainerRef.current && isChatExpanded) {
+      const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+      const isScrolledToBottom = scrollHeight - scrollTop - clientHeight < 50;
+      if (isScrolledToBottom) {
+        messagesContainerRef.current.scrollTop = scrollHeight;
+      }
+    }
+  }, [messages, isChatExpanded]);
 
   useEffect(() => {
     selectedMediaRef.current = selectedMedia;
@@ -156,6 +183,9 @@ export function RoomPage() {
 
           if (message.type === 'chat-message') {
             appendMessage(message.message);
+            if (!isChatExpandedRef.current) {
+              setUnreadCount((c) => c + 1);
+            }
           }
 
           if (message.type === 'participant-left') {
@@ -658,47 +688,76 @@ export function RoomPage() {
           {users <= 1 ? <p>Waiting for others...</p> : null}
         </section>
 
-        <section className="panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '400px' }}>
+        <section className="panel" style={{ display: 'flex', flexDirection: 'column', flex: isChatExpanded ? 1 : 'none', height: isChatExpanded ? '400px' : 'auto' }}>
           <p className="section-kicker">Chat</p>
-          <h2>Room Chat</h2>
-          <div style={{ flex: 1, overflowY: 'auto', marginBottom: '16px', background: 'var(--color-bg-inset)', padding: '8px', borderRadius: '4px' }}>
-            {messages.map((msg) => (
-              <div key={msg.id} style={{ marginBottom: '8px', wordBreak: 'break-word' }}>
-                <strong>{msg.senderUsername}</strong>: {msg.text}
+          <div className="chat-header" onClick={() => setIsChatExpanded(!isChatExpanded)}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <h2>Room Chat</h2>
+              {!isChatExpanded && unreadCount > 0 && (
+                <span className="unread-badge">{unreadCount}</span>
+              )}
+            </div>
+            <span>{isChatExpanded ? '▼' : '▲'}</span>
+          </div>
+          
+          {isChatExpanded && (
+            <>
+              <div ref={messagesContainerRef} className="chat-messages-container">
+                {messages.map((msg) => {
+                  const isSelf = msg.senderConnectionId === localConnectionId;
+                  const timeString = new Intl.DateTimeFormat('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit'
+                  }).format(new Date(msg.timestamp));
+
+                  return (
+                    <div key={msg.id} className={`chat-bubble-wrapper ${isSelf ? 'chat-bubble-self' : 'chat-bubble-other'}`}>
+                      <div className="chat-meta">
+                        <span>{msg.senderUsername}</span>
+                        <span>•</span>
+                        <span>{timeString}</span>
+                      </div>
+                      <div className="chat-bubble">
+                        {msg.text}
+                      </div>
+                    </div>
+                  );
+                })}
+                {messages.length === 0 && <p style={{ color: 'var(--color-text-dim)', textAlign: 'center', marginTop: '16px' }}>{'Pretty empty here :( 📭'}</p>}
+                <div ref={messagesEndRef} />
               </div>
-            ))}
-            {messages.length === 0 && <p style={{ color: 'var(--color-text-dim)' }}>No messages yet.</p>}
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input 
-              type="text" 
-              value={chatInput} 
-              onChange={(e) => setChatInput(e.target.value)} 
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  if (chatInput.trim()) {
-                    sendChatMessage(socketRef.current, chatInput.trim());
-                    setChatInput('');
-                  }
-                }
-              }}
-              style={{ flex: 1 }} 
-              placeholder="Type a message..." 
-            />
-            <button 
-              type="button" 
-              className="primary-button" 
-              onClick={() => {
-                if (chatInput.trim()) {
-                  sendChatMessage(socketRef.current, chatInput.trim());
-                  setChatInput('');
-                }
-              }}
-            >
-              Send
-            </button>
-          </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input 
+                  type="text" 
+                  value={chatInput} 
+                  onChange={(e) => setChatInput(e.target.value)} 
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (chatInput.trim()) {
+                        sendChatMessage(socketRef.current, chatInput.trim());
+                        setChatInput('');
+                      }
+                    }
+                  }}
+                  style={{ flex: 1 }} 
+                  placeholder="Type a message..." 
+                />
+                <button 
+                  type="button" 
+                  className="primary-button" 
+                  onClick={() => {
+                    if (chatInput.trim()) {
+                      sendChatMessage(socketRef.current, chatInput.trim());
+                      setChatInput('');
+                    }
+                  }}
+                >
+                  Send
+                </button>
+              </div>
+            </>
+          )}
         </section>
 
         <section className="panel">
