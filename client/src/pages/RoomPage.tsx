@@ -99,6 +99,8 @@ export function RoomPage() {
       return;
     }
 
+    const currentUsername = username;
+
     async function loadRoom() {
       setStatus('loading');
 
@@ -119,7 +121,7 @@ export function RoomPage() {
 
         const clientId = getRoomHostId(roomId) ?? getClientId();
 
-        socket = createRoomSocket(roomId, clientId, username, (message) => {
+        socket = createRoomSocket(roomId, clientId, currentUsername, (message) => {
           if (!isMounted) {
             return;
           }
