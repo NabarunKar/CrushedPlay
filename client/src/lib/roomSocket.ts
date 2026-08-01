@@ -59,6 +59,10 @@ export type RoomSocketMessage =
       sdpMLineIndex: number | null;
       senderId: string;
       targetId?: string;
+    }
+  | {
+      type: 'chat-message';
+      message: ChatMessagePayload;
     };
 
 export type MediaIdentityMessage = {
@@ -67,6 +71,14 @@ export type MediaIdentityMessage = {
   durationSeconds: number;
   mimeType: string;
   fingerprint: string;
+};
+
+export type ChatMessagePayload = {
+  id: string;
+  senderConnectionId: string;
+  senderUsername: string;
+  text: string;
+  timestamp: number;
 };
 
 /**
@@ -131,6 +143,12 @@ export function sendWebRTCMessage(
   }
 }
 
+export function sendChatMessage(socket: WebSocket | undefined, text: string) {
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'send-chat-message', text }));
+  }
+}
+
 function parseMessage(message: unknown): RoomSocketMessage | undefined {
   if (typeof message !== 'string') {
     return undefined;
@@ -152,7 +170,8 @@ function parseMessage(message: unknown): RoomSocketMessage | undefined {
       parsed.type === 'error' ||
       parsed.type === 'webrtc-offer' ||
       parsed.type === 'webrtc-answer' ||
-      parsed.type === 'webrtc-ice-candidate'
+      parsed.type === 'webrtc-ice-candidate' ||
+      parsed.type === 'chat-message'
     ) {
       return parsed;
     }

@@ -37,6 +37,10 @@ export type ClientMessage =
   | {
       type: 'media-selected';
       media: MediaIdentityMessage;
+    }
+  | {
+      type: 'send-chat-message';
+      text: string;
     };
 
 export type MediaIdentityMessage = {
@@ -53,6 +57,14 @@ export type Participant = {
   username: string;
   isHost: boolean;
   joinedAt: number;
+};
+
+export type ChatMessagePayload = {
+  id: string;
+  senderConnectionId: string;
+  senderUsername: string;
+  text: string;
+  timestamp: number;
 };
 
 export type ServerMessage =
@@ -116,4 +128,8 @@ export type ServerMessage =
       sdpMLineIndex: number | null;
       senderId: string;
       targetId?: string;
+    }
+  | {
+      type: 'chat-message';
+      message: ChatMessagePayload;
     };

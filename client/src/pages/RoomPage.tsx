@@ -5,8 +5,9 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { getRoom } from '../lib/api';
 import { getClientId } from '../lib/clientId';
 import { getRoomHostId } from '../lib/hostIdentity';
-import { createRoomSocket, sendMediaSelected, sendPlaybackCommand, Participant } from '../lib/roomSocket';
+import { createRoomSocket, sendMediaSelected, sendPlaybackCommand, sendChatMessage, Participant, ChatMessagePayload } from '../lib/roomSocket';
 import { addParticipant as storeAddParticipant, getParticipants, removeParticipant as storeRemoveParticipant, reset as resetParticipants, setSnapshot as setParticipantsSnapshot, subscribe as subscribeParticipants } from '../lib/participants';
+import { appendMessage, getMessages, reset as resetChat, subscribe as subscribeChat } from '../lib/chatStore';
 import { compareMediaIdentity, createMediaIdentity, formatBytes, MediaDifference, MediaIdentity, readVideoDuration } from '../media';
 import { formatDuration, inspectMediaFile, localFileProvider, logPlayerEvent, PlaybackSession } from '../playback';
 import { AudioTrack } from '../playback/types';
@@ -25,6 +26,8 @@ export function RoomPage() {
   const [status, setStatus] = useState<RoomStatus>('loading');
   const [users, setUsers] = useState(0);
   const [participants, setParticipants] = useState<Participant[]>(() => getParticipants());
+  const [messages, setMessages] = useState<ChatMessagePayload[]>(() => getMessages());
+  const [chatInput, setChatInput] = useState('');
   const [copyStatus, setCopyStatus] = useState('Copy Link');
   const [isHost, setIsHost] = useState(false);
   const [playbackSession, setPlaybackSession] = useState<PlaybackSession | undefined>();
@@ -81,10 +84,13 @@ export function RoomPage() {
   }, [subtitleTracks]);
 
   useEffect(() => {
-    const unsubscribe = subscribeParticipants(setParticipants);
+    const unsubscribeParticipants = subscribeParticipants(setParticipants);
+    const unsubscribeChat = subscribeChat(setMessages);
     return () => {
-      unsubscribe();
+      unsubscribeParticipants();
+      unsubscribeChat();
       resetParticipants();
+      resetChat();
     };
   }, []);
 
@@ -146,6 +152,10 @@ export function RoomPage() {
 
           if (message.type === 'participant-joined') {
             storeAddParticipant(message.participant);
+          }
+
+          if (message.type === 'chat-message') {
+            appendMessage(message.message);
           }
 
           if (message.type === 'participant-left') {
@@ -646,6 +656,49 @@ export function RoomPage() {
             </ul>
           ) : null}
           {users <= 1 ? <p>Waiting for others...</p> : null}
+        </section>
+
+        <section className="panel" style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '400px' }}>
+          <p className="section-kicker">Chat</p>
+          <h2>Room Chat</h2>
+          <div style={{ flex: 1, overflowY: 'auto', marginBottom: '16px', background: 'var(--color-bg-inset)', padding: '8px', borderRadius: '4px' }}>
+            {messages.map((msg) => (
+              <div key={msg.id} style={{ marginBottom: '8px', wordBreak: 'break-word' }}>
+                <strong>{msg.senderUsername}</strong>: {msg.text}
+              </div>
+            ))}
+            {messages.length === 0 && <p style={{ color: 'var(--color-text-dim)' }}>No messages yet.</p>}
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input 
+              type="text" 
+              value={chatInput} 
+              onChange={(e) => setChatInput(e.target.value)} 
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (chatInput.trim()) {
+                    sendChatMessage(socketRef.current, chatInput.trim());
+                    setChatInput('');
+                  }
+                }
+              }}
+              style={{ flex: 1 }} 
+              placeholder="Type a message..." 
+            />
+            <button 
+              type="button" 
+              className="primary-button" 
+              onClick={() => {
+                if (chatInput.trim()) {
+                  sendChatMessage(socketRef.current, chatInput.trim());
+                  setChatInput('');
+                }
+              }}
+            >
+              Send
+            </button>
+          </div>
         </section>
 
         <section className="panel">

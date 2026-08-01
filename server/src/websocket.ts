@@ -52,6 +52,12 @@ export function createWebSocketServer(server: HttpServer) {
 
       if (message.type === 'webrtc-offer' || message.type === 'webrtc-answer' || message.type === 'webrtc-ice-candidate') {
         handleWebRTCRelay(socket, state, message, clients);
+        return;
+      }
+
+      if (message.type === 'send-chat-message') {
+        handleSendChatMessage(socket, state, message, clients);
+        return;
       }
     });
 
@@ -96,6 +102,37 @@ function handleWebRTCRelay(
       if (!message.targetId || message.targetId === clientState.clientId) {
         send(client, { ...message, senderId: state.clientId });
       }
+    }
+  }
+}
+
+function handleSendChatMessage(
+  socket: WebSocket,
+  state: ClientState,
+  message: ClientMessage & { type: 'send-chat-message' },
+  clients: Map<WebSocket, ClientState>
+) {
+  if (!state.roomId || !state.username) {
+    return;
+  }
+
+  const timestamp = Date.now();
+  const id = `${timestamp}-${state.connectionId}`;
+
+  const chatMessage: ServerMessage = {
+    type: 'chat-message',
+    message: {
+      id,
+      senderConnectionId: state.connectionId,
+      senderUsername: state.username,
+      text: message.text,
+      timestamp
+    }
+  };
+
+  for (const [client, clientState] of clients) {
+    if (clientState.roomId === state.roomId) {
+      send(client, chatMessage);
     }
   }
 }
@@ -304,6 +341,16 @@ function parseMessage(message: string): ClientMessage | undefined {
           sdpMid: typeof parsed.sdpMid === 'string' ? parsed.sdpMid : null,
           sdpMLineIndex: typeof parsed.sdpMLineIndex === 'number' ? parsed.sdpMLineIndex : null,
           targetId: typeof parsed.targetId === 'string' ? parsed.targetId : undefined
+        };
+      }
+    }
+
+    if (parsed.type === 'send-chat-message' && typeof parsed.text === 'string') {
+      const trimmedText = parsed.text.trim();
+      if (trimmedText.length > 0 && trimmedText.length <= 500) {
+        return {
+          type: 'send-chat-message',
+          text: trimmedText
         };
       }
     }
