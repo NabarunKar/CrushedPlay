@@ -55,7 +55,7 @@ export function UsernameModal({
               type="text"
               value={value}
               onChange={(event) => setValue(event.target.value)}
-              placeholder="e.g. Dunkmaster"
+              placeholder="e.g. Tarkovsky"
               autoComplete="off"
               autoFocus
               maxLength={MAX_USERNAME_LENGTH}

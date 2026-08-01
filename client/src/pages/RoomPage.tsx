@@ -68,6 +68,7 @@ export function RoomPage() {
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isChatExpandedRef = useRef(isChatExpanded);
+  const isScrolledToBottomRef = useRef(true);
   const shareUrl = useMemo(() => window.location.href, []);
 
   useEffect(() => {
@@ -90,10 +91,8 @@ export function RoomPage() {
 
   useEffect(() => {
     if (messagesContainerRef.current && isChatExpanded) {
-      const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
-      const isScrolledToBottom = scrollHeight - scrollTop - clientHeight < 50;
-      if (isScrolledToBottom) {
-        messagesContainerRef.current.scrollTop = scrollHeight;
+      if (isScrolledToBottomRef.current) {
+        messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
       }
     }
   }, [messages, isChatExpanded]);
@@ -702,7 +701,14 @@ export function RoomPage() {
           
           {isChatExpanded && (
             <>
-              <div ref={messagesContainerRef} className="chat-messages-container">
+              <div 
+                ref={messagesContainerRef} 
+                className="chat-messages-container"
+                onScroll={(e) => {
+                  const target = e.currentTarget;
+                  isScrolledToBottomRef.current = target.scrollHeight - target.scrollTop - target.clientHeight < 50;
+                }}
+              >
                 {messages.map((msg) => {
                   const isSelf = msg.senderConnectionId === localConnectionId;
                   const timeString = new Intl.DateTimeFormat('en-US', {
@@ -735,6 +741,7 @@ export function RoomPage() {
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       if (chatInput.trim()) {
+                        isScrolledToBottomRef.current = true;
                         sendChatMessage(socketRef.current, chatInput.trim());
                         setChatInput('');
                       }
@@ -748,6 +755,7 @@ export function RoomPage() {
                   className="primary-button" 
                   onClick={() => {
                     if (chatInput.trim()) {
+                      isScrolledToBottomRef.current = true;
                       sendChatMessage(socketRef.current, chatInput.trim());
                       setChatInput('');
                     }

@@ -81,7 +81,7 @@ export function LandingPage() {
                 type="text"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
-                placeholder="e.g. Dunkmaster"
+                placeholder="e.g. Kurosawa"
                 autoComplete="off"
                 maxLength={MAX_USERNAME_LENGTH}
               />
