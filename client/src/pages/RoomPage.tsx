@@ -1,6 +1,6 @@
 import Plyr from 'plyr';
 import 'plyr/dist/plyr.css';
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { getRoom } from '../lib/api';
 import { getClientId } from '../lib/clientId';
@@ -14,6 +14,8 @@ import { AudioTrack } from '../playback/types';
 import { createLocalSubtitleTrack, SubtitleTrack } from '../subtitles';
 import { WebRTCManager } from '../lib/webrtcManager';
 import { UsernameModal } from '../components/UsernameModal';
+
+const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
 type RoomStatus = 'loading' | 'ready' | 'not-found' | 'error';
 type VerificationStatus = 'none' | 'waiting' | 'verified' | 'mismatch';
@@ -70,6 +72,48 @@ export function RoomPage() {
   const isChatExpandedRef = useRef(isChatExpanded);
   const isScrolledToBottomRef = useRef(true);
   const shareUrl = useMemo(() => window.location.href, []);
+
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const chatInputRef = useRef<HTMLInputElement | null>(null);
+  const emojiPickerContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerContainerRef.current && !emojiPickerContainerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showEmojiPicker]);
+
+  const onEmojiClick = (emojiObject: any) => {
+    const input = chatInputRef.current;
+    if (!input) return;
+
+    const cursor = input.selectionStart || chatInput.length;
+    const text = chatInput.slice(0, cursor) + emojiObject.emoji + chatInput.slice(cursor);
+    setChatInput(text);
+
+    setTimeout(() => {
+      input.focus();
+      input.setSelectionRange(cursor + emojiObject.emoji.length, cursor + emojiObject.emoji.length);
+    }, 0);
+  };
 
   useEffect(() => {
     playbackSessionRef.current = playbackSession;
@@ -778,8 +822,9 @@ export function RoomPage() {
                 {timeline.length === 0 && <p style={{ color: 'var(--color-text-dim)', textAlign: 'center', marginTop: '16px' }}>{'Pretty empty here :( 📭'}</p>}
                 <div ref={messagesEndRef} />
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <input 
+                  ref={chatInputRef}
                   type="text" 
                   value={chatInput} 
                   onChange={(e) => setChatInput(e.target.value)} 
@@ -796,9 +841,27 @@ export function RoomPage() {
                   style={{ flex: 1 }} 
                   placeholder="Type a message..." 
                 />
+                <div style={{ position: 'relative' }} ref={emojiPickerContainerRef}>
+                  <button 
+                    type="button" 
+                    className="icon-button" 
+                    onClick={() => setShowEmojiPicker((prev) => !prev)}
+                    title="Insert emoji"
+                  >
+                    😀
+                  </button>
+                  {showEmojiPicker && (
+                    <div style={{ position: 'absolute', bottom: '100%', right: 0, marginBottom: '8px', zIndex: 10 }}>
+                      <Suspense fallback={<div style={{ width: '350px', height: '400px', background: '#222', borderRadius: '8px' }}></div>}>
+                        {/* @ts-ignore */}
+                        <EmojiPicker onEmojiClick={onEmojiClick} theme="dark" />
+                      </Suspense>
+                    </div>
+                  )}
+                </div>
                 <button 
                   type="button" 
-                  className="primary-button" 
+                  className="icon-button primary-icon-button" 
                   onClick={() => {
                     if (chatInput.trim()) {
                       isScrolledToBottomRef.current = true;
@@ -806,8 +869,9 @@ export function RoomPage() {
                       setChatInput('');
                     }
                   }}
+                  title="Send message"
                 >
-                  Send
+                  <img src="/assets/icons/send.svg" alt="Send" />
                 </button>
               </div>
             </>
